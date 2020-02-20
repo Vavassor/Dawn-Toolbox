@@ -35,7 +35,7 @@ module.exports = {
     new CleanWebpackPlugin(),
     new HtmlWebpackPlugin({
       template: "Source/index.html",
-      title: "Bivector",
+      title: "Dawn Toolbox",
     }),
   ],
   output: {
