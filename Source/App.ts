@@ -11,9 +11,14 @@ import {
 import pixelSource from "./Shaders/basic.ps.glsl";
 import vertexSource from "./Shaders/basic.vs.glsl";
 import { Matrix4 } from "./Geometry/Matrix4";
+import { setViewport } from "./WebGL/Viewport";
+import { Size2 } from "./Size2";
+import { Point3 } from "./Geometry/Point3";
+import { Vector3 } from "./Geometry/Vector3";
 
 export interface App {
   buffers: BufferSet;
+  canvasSize: Size2;
   context: GloContext;
   pipelines: PipelineSet;
   programs: ShaderProgramSet;
@@ -31,10 +36,14 @@ interface ShaderProgramSet {
   basic: ShaderProgram;
 }
 
-export const createApp = (context: GloContext): App => {
+export const createApp = (
+  context: GloContext,
+  initialCanvasSize: Size2
+): App => {
   const programs = createShaderProgramSet(context);
   return {
     buffers: createBufferSet(context),
+    canvasSize: initialCanvasSize,
     context,
     pipelines: createPipelineSet(context, programs),
     programs,
@@ -129,13 +138,36 @@ export const updateFrame = (app: App) => {
     },
   });
 
+  setViewport(context, {
+    bottomLeftX: 0,
+    bottomLeftY: 0,
+    farPlane: 1,
+    height: app.canvasSize.height,
+    nearPlane: -1,
+    width: app.canvasSize.width,
+  });
+
   setPipeline(context, pipelines.test);
+
+  const view = Matrix4.lookAtRh(
+    new Point3([0, -1, 1]),
+    Point3.zero(),
+    Vector3.unitZ()
+  );
+  const projection = Matrix4.perspective(
+    Math.PI / 2,
+    app.canvasSize.width,
+    app.canvasSize.height,
+    0.001,
+    100
+  );
+  const modelViewProjection = Matrix4.multiply(projection, view);
 
   setUniformMatrix4fv(
     context,
     programs.basic,
     "model_view_projection",
-    Matrix4.toFloat32Array(Matrix4.identity())
+    Matrix4.toFloat32Array(modelViewProjection)
   );
 
   draw(context, {

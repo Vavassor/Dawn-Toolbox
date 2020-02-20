@@ -39,7 +39,7 @@ const main = () => {
   let app: App;
   try {
     const context = Glo.createContext(canvas);
-    app = createApp(context);
+    app = createApp(context, { width: 800, height: 600 });
   } catch (error) {
     logError(error);
     displayError(error);
