@@ -1,4 +1,10 @@
-import { App, updateFrame, createApp, handleMouseMoveWithApp } from "./App";
+import {
+  App,
+  updateFrame,
+  createApp,
+  handleMouseMove as handleMouseMoveWithApp,
+  handleResize as handleResizeWithApp,
+} from "./App";
 import * as Glo from "./WebGL/GloContext";
 import "./Stylesheets/main.css";
 
@@ -31,6 +37,7 @@ const createEventHandlers = (app: App, canvas: HTMLCanvasElement) => {
   document.addEventListener("pointerlockerror", event =>
     handlePointerLockError(event)
   );
+  window.addEventListener("resize", event => handleResizeWithApp(event, app));
 };
 
 const displayError = (error: Error) => {
@@ -40,7 +47,7 @@ const displayError = (error: Error) => {
   pageError.textContent = error.toString();
 };
 
-const handleClick = (event: MouseEvent, canvas: HTMLCanvasElement) => {
+const handleClick = (event: MouseEvent, canvas: HTMLCanvasElement): any => {
   canvas.requestPointerLock();
 };
 
@@ -48,19 +55,24 @@ const handlePointerLockChange = (
   event: Event,
   app: App,
   canvas: HTMLCanvasElement
-) => {
+): any => {
   if (document.pointerLockElement === canvas) {
-    const handleMouseMove = (event: MouseEvent) => {
-      handleMouseMoveWithApp(event, app);
-    };
-    app.handleMouseMove = handleMouseMove;
-    document.addEventListener("mousemove", handleMouseMove, false);
+    if (!app.handleMouseMove) {
+      const handleMouseMove = (event: MouseEvent) => {
+        handleMouseMoveWithApp(event, app);
+      };
+      document.addEventListener("mousemove", handleMouseMove, false);
+      app.handleMouseMove = handleMouseMove;
+    }
   } else {
-    document.removeEventListener("mousemove", app.handleMouseMove, false);
+    if (app.handleMouseMove) {
+      document.removeEventListener("mousemove", app.handleMouseMove, false);
+      app.handleMouseMove = null;
+    }
   }
 };
 
-const handlePointerLockError = (event: Event) => {
+const handlePointerLockError = (event: Event): any => {
   const error = new Error("Failed to lock the pointer.");
   displayError(error);
   logError(error);

@@ -153,6 +153,35 @@ export class Matrix4 {
   /**
    * Create a transform from world space to view space.
    *
+   * This assumes a right handed coordinate system.
+   *
+   * @param position the view position
+   * @param yaw
+   * @param pitch
+   * @param worldUp the world space up axis
+   * @return a transform from world space to view space
+   */
+  static turnRh(
+    position: Point3,
+    yaw: number,
+    pitch: number,
+    worldUp: Vector3
+  ): Matrix4 {
+    const forward = Vector3.normalize(
+      new Vector3([
+        Math.cos(pitch) * Math.cos(yaw),
+        Math.cos(pitch) * Math.sin(yaw),
+        Math.sin(pitch),
+      ])
+    );
+    const right = Vector3.normalize(Vector3.cross(worldUp, forward));
+    const up = Vector3.normalize(Vector3.cross(forward, right));
+    return Matrix4.view(right, up, forward, position);
+  }
+
+  /**
+   * Create a transform from world space to view space.
+   *
    * @param xAxis the orientation X axis of the view
    * @param yAxis the orientation Y axis of the view
    * @param zAxis the orientation Z axis of the view
