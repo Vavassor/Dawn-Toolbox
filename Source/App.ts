@@ -20,6 +20,7 @@ export interface App {
   buffers: BufferSet;
   canvasSize: Size2;
   context: GloContext;
+  handleMouseMove?: HandleMouseMove;
   pipelines: PipelineSet;
   programs: ShaderProgramSet;
 }
@@ -27,6 +28,8 @@ export interface App {
 interface BufferSet {
   test: GloBuffer;
 }
+
+export type HandleMouseMove = (event: MouseEvent) => void;
 
 interface PipelineSet {
   test: Pipeline;
@@ -48,6 +51,10 @@ export const createApp = (
     pipelines: createPipelineSet(context, programs),
     programs,
   };
+};
+
+export const handleMouseMoveWithApp = (event: MouseEvent, app: App) => {
+
 };
 
 const createBufferSet = (context: GloContext): BufferSet => {
