@@ -4,6 +4,8 @@ import {
   createApp,
   handleMouseMove as handleMouseMoveWithApp,
   handleResize as handleResizeWithApp,
+  handleKeyDown,
+  handleKeyUp,
 } from "./App";
 import * as Glo from "./WebGL/GloContext";
 import "./Stylesheets/main.css";
@@ -31,6 +33,8 @@ const animateFrame = (
 
 const createEventHandlers = (app: App, canvas: HTMLCanvasElement) => {
   canvas.addEventListener("click", event => handleClick(event, canvas));
+  document.addEventListener("keydown", event => handleKeyDown(event, app));
+  document.addEventListener("keyup", event => handleKeyUp(event, app));
   document.addEventListener("pointerlockchange", event =>
     handlePointerLockChange(event, app, canvas)
   );

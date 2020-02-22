@@ -17,6 +17,15 @@ import { Point3 } from "./Geometry/Point3";
 import { Vector3 } from "./Geometry/Vector3";
 import { Vector2 } from "./Geometry/Vector2";
 import { clamp } from "./Clamp";
+import {
+  createInputState,
+  handleKeyDown as handleKeyDownInput,
+  handleKeyUp as handleKeyUpInput,
+  InputState,
+  KeyMapping,
+  updateInput,
+  resetInput,
+} from "./Input";
 
 export interface App {
   buffers: BufferSet;
@@ -35,16 +44,11 @@ interface BufferSet {
 
 interface Camera {
   pitch: number;
+  position: Point3;
   yaw: number;
 }
 
 export type HandleMouseMove = (event: MouseEvent) => void;
-
-interface InputState {
-  pointer: {
-    delta: Vector2;
-  };
-}
 
 interface PipelineSet {
   test: Pipeline;
@@ -58,23 +62,29 @@ export const createApp = (
   context: GloContext,
   initialCanvasSize: Size2
 ): App => {
+  const keyMappings = createKeyMappings();
   const programs = createShaderProgramSet(context);
   return {
     buffers: createBufferSet(context),
     camera: {
       pitch: 0,
+      position: new Point3([0, 0, 1]),
       yaw: 0,
     },
     canvasSize: initialCanvasSize,
     context,
-    input: {
-      pointer: {
-        delta: new Vector2(),
-      },
-    },
+    input: createInputState(keyMappings),
     pipelines: createPipelineSet(context, programs),
     programs,
   };
+};
+
+export const handleKeyDown = (event: KeyboardEvent, app: App): any => {
+  handleKeyDownInput(app.input, event.key);
+};
+
+export const handleKeyUp = (event: KeyboardEvent, app: App): any => {
+  handleKeyUpInput(app.input, event.key);
 };
 
 export const handleMouseMove = (event: MouseEvent, app: App): any => {
@@ -115,6 +125,35 @@ const createBufferSet = (context: GloContext): BufferSet => {
   return {
     test: buffer,
   };
+};
+
+const createKeyMappings = (): KeyMapping[] => {
+  return [
+    {
+      direction: "POSITIVE_Y",
+      index: 0,
+      key: "w",
+      type: "AXIS",
+    },
+    {
+      direction: "NEGATIVE_Y",
+      index: 0,
+      key: "s",
+      type: "AXIS",
+    },
+    {
+      direction: "POSITIVE_X",
+      index: 0,
+      key: "d",
+      type: "AXIS",
+    },
+    {
+      direction: "NEGATIVE_X",
+      index: 0,
+      key: "a",
+      type: "AXIS",
+    },
+  ];
 };
 
 const createPipelineSet = (
@@ -170,6 +209,7 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
 export const updateFrame = (app: App) => {
   const { buffers, camera, context, input, pipelines, programs } = app;
 
+  updateInput(input);
   updateCamera(camera, input);
   resetInput(input);
 
@@ -191,13 +231,8 @@ export const updateFrame = (app: App) => {
 
   setPipeline(context, pipelines.test);
 
-  const { pitch, yaw } = camera;
-  const view = Matrix4.turnRh(
-    new Point3([-1, 1, 1]),
-    yaw,
-    pitch,
-    Vector3.unitZ()
-  );
+  const { position, pitch, yaw } = camera;
+  const view = Matrix4.turnRh(position, yaw, pitch, Vector3.unitZ());
   const projection = Matrix4.perspective(
     Math.PI / 2,
     app.canvasSize.width,
@@ -221,17 +256,17 @@ export const updateFrame = (app: App) => {
   });
 };
 
-const resetInput = (input: InputState) => {
-  const { delta } = input.pointer;
-  delta.x = 0;
-  delta.y = 0;
-};
-
 const updateCamera = (camera: Camera, input: InputState) => {
   const { delta } = input.pointer;
   const horizontalPixelsPerRadian = 0.001;
+  const moveSpeed = 0.1;
   const verticalPixelsPerRadian = 0.001;
   const deltaPitch = verticalPixelsPerRadian * delta.y;
+
   camera.pitch = clamp(camera.pitch - deltaPitch, -Math.PI / 2, Math.PI / 2);
   camera.yaw -= horizontalPixelsPerRadian * delta.x;
+
+  const direction = Vector2.rotate(input.axes[0], camera.yaw + Math.PI / 2);
+  const velocity = Vector2.multiply(moveSpeed, direction);
+  camera.position = Point3.add(camera.position, Vector3.fromVector2(velocity));
 };
