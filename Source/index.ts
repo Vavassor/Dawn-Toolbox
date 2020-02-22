@@ -2,13 +2,16 @@ import {
   App,
   updateFrame,
   createApp,
-  handleMouseMove as handleMouseMoveWithApp,
   handleResize as handleResizeWithApp,
-  handleKeyDown,
-  handleKeyUp,
 } from "./App";
 import * as Glo from "./WebGL/GloContext";
 import "./Stylesheets/main.css";
+import {
+  handleKeyDown,
+  handleKeyUp,
+  handleMouseMove as handleMouseMoveInput,
+} from "./Input";
+import { Vector2 } from "./Geometry/Vector2";
 
 interface AnimationFrame {
   app: App;
@@ -33,14 +36,18 @@ const animateFrame = (
 
 const createEventHandlers = (app: App, canvas: HTMLCanvasElement) => {
   canvas.addEventListener("click", event => handleClick(event, canvas));
-  document.addEventListener("keydown", event => handleKeyDown(event, app));
-  document.addEventListener("keyup", event => handleKeyUp(event, app));
-  document.addEventListener("pointerlockchange", event =>
-    handlePointerLockChange(event, app, canvas)
-  );
-  document.addEventListener("pointerlockerror", event =>
-    handlePointerLockError(event)
-  );
+  document.addEventListener("keydown", event => {
+    handleKeyDown(app.input, event.key);
+  });
+  document.addEventListener("keyup", event => {
+    handleKeyUp(app.input, event.key);
+  });
+  document.addEventListener("pointerlockchange", event => {
+    handlePointerLockChange(event, app, canvas);
+  });
+  document.addEventListener("pointerlockerror", event => {
+    handlePointerLockError(event);
+  });
   window.addEventListener("resize", event => handleResizeWithApp(event, app));
 };
 
@@ -63,7 +70,10 @@ const handlePointerLockChange = (
   if (document.pointerLockElement === canvas) {
     if (!app.handleMouseMove) {
       const handleMouseMove = (event: MouseEvent) => {
-        handleMouseMoveWithApp(event, app);
+        handleMouseMoveInput(
+          app.input,
+          new Vector2([event.movementX, -event.movementY])
+        );
       };
       document.addEventListener("mousemove", handleMouseMove, false);
       app.handleMouseMove = handleMouseMove;

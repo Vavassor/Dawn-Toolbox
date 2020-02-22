@@ -19,12 +19,11 @@ import { Vector2 } from "./Geometry/Vector2";
 import { clamp } from "./Clamp";
 import {
   createInputState,
-  handleKeyDown as handleKeyDownInput,
-  handleKeyUp as handleKeyUpInput,
   InputState,
   KeyMapping,
   updateInput,
   resetInput,
+  getAxis2d,
 } from "./Input";
 
 export interface App {
@@ -79,20 +78,6 @@ export const createApp = (
   };
 };
 
-export const handleKeyDown = (event: KeyboardEvent, app: App): any => {
-  handleKeyDownInput(app.input, event.key);
-};
-
-export const handleKeyUp = (event: KeyboardEvent, app: App): any => {
-  handleKeyUpInput(app.input, event.key);
-};
-
-export const handleMouseMove = (event: MouseEvent, app: App): any => {
-  const { delta } = app.input.pointer;
-  delta.x = event.movementX;
-  delta.y = -event.movementY;
-};
-
 export const handleResize = (event: UIEvent, app: App): any => {
   const height = window.innerHeight;
   const width = window.innerWidth;
@@ -130,28 +115,28 @@ const createBufferSet = (context: GloContext): BufferSet => {
 const createKeyMappings = (): KeyMapping[] => {
   return [
     {
+      action: "MOVE",
       direction: "POSITIVE_Y",
-      index: 0,
       key: "w",
-      type: "AXIS",
+      type: "AXIS_2D",
     },
     {
+      action: "MOVE",
       direction: "NEGATIVE_Y",
-      index: 0,
       key: "s",
-      type: "AXIS",
+      type: "AXIS_2D",
     },
     {
+      action: "MOVE",
       direction: "POSITIVE_X",
-      index: 0,
       key: "d",
-      type: "AXIS",
+      type: "AXIS_2D",
     },
     {
+      action: "MOVE",
       direction: "NEGATIVE_X",
-      index: 0,
       key: "a",
-      type: "AXIS",
+      type: "AXIS_2D",
     },
   ];
 };
@@ -266,7 +251,10 @@ const updateCamera = (camera: Camera, input: InputState) => {
   camera.pitch = clamp(camera.pitch - deltaPitch, -Math.PI / 2, Math.PI / 2);
   camera.yaw -= horizontalPixelsPerRadian * delta.x;
 
-  const direction = Vector2.rotate(input.axes[0], camera.yaw + Math.PI / 2);
+  const direction = Vector2.rotate(
+    getAxis2d(input, "MOVE"),
+    camera.yaw + Math.PI / 2
+  );
   const velocity = Vector2.multiply(moveSpeed, direction);
   camera.position = Point3.add(camera.position, Vector3.fromVector2(velocity));
 };

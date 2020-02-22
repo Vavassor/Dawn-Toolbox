@@ -59,14 +59,6 @@ export class Vector2 {
     return Vector2.divide(v, v.length);
   }
 
-  static normalizeOrZero(v: Vector2): Vector2 {
-    const length = v.length;
-    if (length === 0) {
-      return Vector2.zero();
-    }
-    return Vector2.divide(v, length);
-  }
-
   static pointwiseDivide(a: Vector2, b: Vector2): Vector2 {
     return new Vector2([a.x / b.x, a.y / b.y]);
   }
