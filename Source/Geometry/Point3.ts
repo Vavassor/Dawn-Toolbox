@@ -42,4 +42,8 @@ export class Point3 {
   static subtract(a: Point3, b: Point3): Vector3 {
     return new Vector3([a.x - b.x, a.y - b.y, a.z - b.z]);
   }
+
+  static zero(): Point3 {
+    return new Point3([0, 0, 0]);
+  }
 }

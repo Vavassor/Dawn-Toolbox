@@ -11,10 +11,28 @@ import {
 import pixelSource from "./Shaders/basic.ps.glsl";
 import vertexSource from "./Shaders/basic.vs.glsl";
 import { Matrix4 } from "./Geometry/Matrix4";
+import { setViewport } from "./WebGL/Viewport";
+import { Size2 } from "./Size2";
+import { Point3 } from "./Geometry/Point3";
+import { Vector3 } from "./Geometry/Vector3";
+import { Vector2 } from "./Geometry/Vector2";
+import { clamp } from "./Clamp";
+import {
+  createInputState,
+  InputState,
+  KeyMapping,
+  updateInput,
+  resetInput,
+  getAxis2d,
+} from "./Input";
 
 export interface App {
   buffers: BufferSet;
+  camera: Camera;
+  canvasSize: Size2;
   context: GloContext;
+  handleMouseMove?: HandleMouseMove;
+  input: InputState;
   pipelines: PipelineSet;
   programs: ShaderProgramSet;
 }
@@ -22,6 +40,14 @@ export interface App {
 interface BufferSet {
   test: GloBuffer;
 }
+
+interface Camera {
+  pitch: number;
+  position: Point3;
+  yaw: number;
+}
+
+export type HandleMouseMove = (event: MouseEvent) => void;
 
 interface PipelineSet {
   test: Pipeline;
@@ -31,14 +57,31 @@ interface ShaderProgramSet {
   basic: ShaderProgram;
 }
 
-export const createApp = (context: GloContext): App => {
+export const createApp = (
+  context: GloContext,
+  initialCanvasSize: Size2
+): App => {
+  const keyMappings = createKeyMappings();
   const programs = createShaderProgramSet(context);
   return {
     buffers: createBufferSet(context),
+    camera: {
+      pitch: 0,
+      position: new Point3([0, 0, 1]),
+      yaw: 0,
+    },
+    canvasSize: initialCanvasSize,
     context,
+    input: createInputState(keyMappings),
     pipelines: createPipelineSet(context, programs),
     programs,
   };
+};
+
+export const handleResize = (event: UIEvent, app: App): any => {
+  const height = window.innerHeight;
+  const width = window.innerWidth;
+  console.log(`resize event: ${width}x${height}`);
 };
 
 const createBufferSet = (context: GloContext): BufferSet => {
@@ -67,6 +110,35 @@ const createBufferSet = (context: GloContext): BufferSet => {
   return {
     test: buffer,
   };
+};
+
+const createKeyMappings = (): KeyMapping[] => {
+  return [
+    {
+      action: "MOVE",
+      direction: "POSITIVE_Y",
+      key: "w",
+      type: "AXIS_2D",
+    },
+    {
+      action: "MOVE",
+      direction: "NEGATIVE_Y",
+      key: "s",
+      type: "AXIS_2D",
+    },
+    {
+      action: "MOVE",
+      direction: "POSITIVE_X",
+      key: "d",
+      type: "AXIS_2D",
+    },
+    {
+      action: "MOVE",
+      direction: "NEGATIVE_X",
+      key: "a",
+      type: "AXIS_2D",
+    },
+  ];
 };
 
 const createPipelineSet = (
@@ -120,7 +192,11 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
 };
 
 export const updateFrame = (app: App) => {
-  const { buffers, context, pipelines, programs } = app;
+  const { buffers, camera, context, input, pipelines, programs } = app;
+
+  updateInput(input);
+  updateCamera(camera, input);
+  resetInput(input);
 
   clearTarget(context, {
     color: {
@@ -129,13 +205,33 @@ export const updateFrame = (app: App) => {
     },
   });
 
+  setViewport(context, {
+    bottomLeftX: 0,
+    bottomLeftY: 0,
+    farPlane: 1,
+    height: app.canvasSize.height,
+    nearPlane: 0,
+    width: app.canvasSize.width,
+  });
+
   setPipeline(context, pipelines.test);
+
+  const { position, pitch, yaw } = camera;
+  const view = Matrix4.turnRh(position, yaw, pitch, Vector3.unitZ());
+  const projection = Matrix4.perspective(
+    Math.PI / 2,
+    app.canvasSize.width,
+    app.canvasSize.height,
+    0.001,
+    100
+  );
+  const modelViewProjection = Matrix4.multiply(projection, view);
 
   setUniformMatrix4fv(
     context,
     programs.basic,
     "model_view_projection",
-    Matrix4.toFloat32Array(Matrix4.identity())
+    Matrix4.toFloat32Array(Matrix4.transpose(modelViewProjection))
   );
 
   draw(context, {
@@ -143,4 +239,22 @@ export const updateFrame = (app: App) => {
     startIndex: 0,
     vertexBuffers: [buffers.test],
   });
+};
+
+const updateCamera = (camera: Camera, input: InputState) => {
+  const { delta } = input.pointer;
+  const horizontalPixelsPerRadian = 0.001;
+  const moveSpeed = 0.1;
+  const verticalPixelsPerRadian = 0.001;
+  const deltaPitch = verticalPixelsPerRadian * delta.y;
+
+  camera.pitch = clamp(camera.pitch - deltaPitch, -Math.PI / 2, Math.PI / 2);
+  camera.yaw -= horizontalPixelsPerRadian * delta.x;
+
+  const direction = Vector2.rotate(
+    getAxis2d(input, "MOVE"),
+    camera.yaw + Math.PI / 2
+  );
+  const velocity = Vector2.multiply(moveSpeed, direction);
+  camera.position = Point3.add(camera.position, Vector3.fromVector2(velocity));
 };

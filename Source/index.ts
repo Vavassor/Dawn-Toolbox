@@ -1,6 +1,17 @@
-import { App, updateFrame, createApp } from "./App";
+import {
+  App,
+  updateFrame,
+  createApp,
+  handleResize as handleResizeWithApp,
+} from "./App";
 import * as Glo from "./WebGL/GloContext";
 import "./Stylesheets/main.css";
+import {
+  handleKeyDown,
+  handleKeyUp,
+  handleMouseMove as handleMouseMoveInput,
+} from "./Input";
+import { Vector2 } from "./Geometry/Vector2";
 
 interface AnimationFrame {
   app: App;
@@ -23,11 +34,62 @@ const animateFrame = (
   frame.id = requestAnimationFrame(timestamp => animateFrame(frame, timestamp));
 };
 
+const createEventHandlers = (app: App, canvas: HTMLCanvasElement) => {
+  canvas.addEventListener("click", event => handleClick(event, canvas));
+  document.addEventListener("keydown", event => {
+    handleKeyDown(app.input, event.key);
+  });
+  document.addEventListener("keyup", event => {
+    handleKeyUp(app.input, event.key);
+  });
+  document.addEventListener("pointerlockchange", event => {
+    handlePointerLockChange(event, app, canvas);
+  });
+  document.addEventListener("pointerlockerror", event => {
+    handlePointerLockError(event);
+  });
+  window.addEventListener("resize", event => handleResizeWithApp(event, app));
+};
+
 const displayError = (error: Error) => {
   const pageErrorArea = document.getElementById("page-error-area");
   pageErrorArea.style.display = "block";
   const pageError = document.getElementById("page-error");
   pageError.textContent = error.toString();
+};
+
+const handleClick = (event: MouseEvent, canvas: HTMLCanvasElement): any => {
+  canvas.requestPointerLock();
+};
+
+const handlePointerLockChange = (
+  event: Event,
+  app: App,
+  canvas: HTMLCanvasElement
+): any => {
+  if (document.pointerLockElement === canvas) {
+    if (!app.handleMouseMove) {
+      const handleMouseMove = (event: MouseEvent) => {
+        handleMouseMoveInput(
+          app.input,
+          new Vector2([event.movementX, -event.movementY])
+        );
+      };
+      document.addEventListener("mousemove", handleMouseMove, false);
+      app.handleMouseMove = handleMouseMove;
+    }
+  } else {
+    if (app.handleMouseMove) {
+      document.removeEventListener("mousemove", app.handleMouseMove, false);
+      app.handleMouseMove = null;
+    }
+  }
+};
+
+const handlePointerLockError = (event: Event): any => {
+  const error = new Error("Failed to lock the pointer.");
+  displayError(error);
+  logError(error);
 };
 
 const logError = (error: Error) => {
@@ -39,12 +101,14 @@ const main = () => {
   let app: App;
   try {
     const context = Glo.createContext(canvas);
-    app = createApp(context);
+    app = createApp(context, { width: 800, height: 600 });
   } catch (error) {
     logError(error);
     displayError(error);
     return;
   }
+
+  createEventHandlers(app, canvas);
 
   const frame = {
     app,

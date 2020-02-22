@@ -67,7 +67,17 @@ export class Vector2 {
     return new Vector2([a.x * b.x, a.y * b.y]);
   }
 
+  static rotate(v: Vector2, angle: number): Vector2 {
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    return new Vector2([c * v.x - s * v.y, s * v.x + c * v.y]);
+  }
+
   static subtract(a: Vector2, b: Vector2): Vector2 {
     return new Vector2([a.x - b.x, a.y - b.y]);
+  }
+
+  static zero(): Vector2 {
+    return new Vector2([0, 0]);
   }
 }

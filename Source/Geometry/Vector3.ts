@@ -1,4 +1,5 @@
 import { Point3 } from "./Point3";
+import { Vector2 } from "./Vector2";
 
 export class Vector3 {
   elements: number[];
@@ -64,6 +65,10 @@ export class Vector3 {
 
   static divide(v: Vector3, s: number): Vector3 {
     return new Vector3([v.x / s, v.y / s, v.z / s]);
+  }
+
+  static fromVector2(vector: Vector2): Vector3 {
+    return new Vector3([vector.x, vector.y, 0]);
   }
 
   static fromPoint3(point: Point3): Vector3 {
