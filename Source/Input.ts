@@ -45,6 +45,7 @@ export interface InputState {
   keyMappings: KeyMapping[];
   pointer: {
     delta: Vector2;
+    nextDelta: Vector2;
   };
 }
 
@@ -67,6 +68,7 @@ export const createInputState = (keyMappings: KeyMapping[]): InputState => {
     keyMappings,
     pointer: {
       delta: Vector2.zero(),
+      nextDelta: Vector2.zero(),
     },
   };
 };
@@ -106,65 +108,34 @@ export const handleKeyUp = (input: InputState, eventKey: string) => {
 };
 
 export const handleMouseMove = (input: InputState, delta: Vector2) => {
-  input.pointer.delta = delta;
-};
-
-export const resetInput = (input: InputState) => {
-  input.pointer.delta = Vector2.zero();
+  input.pointer.nextDelta = delta;
 };
 
 export const updateInput = (input: InputState) => {
-  const {
-    axis1dsByAction,
-    axis2dsByAction,
-    buttonsByAction,
-    isKeyDownByKey,
-    keyMappings,
-  } = input;
+  const { keyMappings } = input;
 
-  Array.from(axis1dsByAction.keys()).forEach(action =>
-    axis1dsByAction.set(action, 0)
-  );
-  Array.from(axis2dsByAction.keys()).forEach(action =>
-    axis2dsByAction.set(action, Vector2.zero())
-  );
+  resetInput(input);
 
   for (const keyMapping of keyMappings) {
-    const { key } = keyMapping;
-
     switch (keyMapping.type) {
-      case "AXIS_1D": {
-        if (isKeyDownByKey.get(key)) {
-          const { action, direction } = keyMapping;
-          const signedOne = getAxis1dSignedOne(direction);
-          const axis = axis1dsByAction.get(action);
-          axis1dsByAction.set(action, axis + signedOne);
-        }
+      case "AXIS_1D":
+        updateAxis1d(input, keyMapping);
         break;
-      }
-      case "AXIS_2D": {
-        if (isKeyDownByKey.get(key)) {
-          const { action, direction } = keyMapping;
-          const component = getAxis2dComponent(direction);
-          const signedOne = getAxis2dSignedOne(direction);
-          const axis = axis2dsByAction.get(action);
-          axis.elements[component] += signedOne;
-        }
+      case "AXIS_2D":
+        updateAxis2d(input, keyMapping);
         break;
-      }
       case "BUTTON": {
-        const { action } = keyMapping;
-        const button = buttonsByAction.get(action);
-        if (isKeyDownByKey.get(key)) {
-          button.framesDown++;
-        } else {
-          button.framesDown = 0;
-        }
+        updateButton(input, keyMapping);
         break;
       }
     }
   }
 
+  applyLimits(input);
+};
+
+const applyLimits = (input: InputState) => {
+  const { axis1dsByAction, axis2dsByAction } = input;
   Array.from(axis1dsByAction.entries()).forEach(([action, axis]) => {
     axis1dsByAction.set(action, clamp(axis, -1, 1));
   });
@@ -257,5 +228,53 @@ const getAxis2dSignedOne = (direction: Axis2dDirection): number => {
     case "POSITIVE_X":
     case "POSITIVE_Y":
       return 1;
+  }
+};
+
+const resetInput = (input: InputState) => {
+  const { axis1dsByAction, axis2dsByAction, pointer } = input;
+
+  pointer.delta = pointer.nextDelta;
+  pointer.nextDelta = Vector2.zero();
+
+  Array.from(axis1dsByAction.keys()).forEach(action =>
+    axis1dsByAction.set(action, 0)
+  );
+  Array.from(axis2dsByAction.keys()).forEach(action =>
+    axis2dsByAction.set(action, Vector2.zero())
+  );
+};
+
+const updateAxis1d = (input: InputState, keyMapping: KeyMappingAxis1d) => {
+  const { axis1dsByAction, isKeyDownByKey } = input;
+  const { key } = keyMapping;
+  if (isKeyDownByKey.get(key)) {
+    const { action, direction } = keyMapping;
+    const signedOne = getAxis1dSignedOne(direction);
+    const axis = axis1dsByAction.get(action);
+    axis1dsByAction.set(action, axis + signedOne);
+  }
+};
+
+const updateAxis2d = (input: InputState, keyMapping: KeyMappingAxis2d) => {
+  const { axis2dsByAction, isKeyDownByKey } = input;
+  const { key } = keyMapping;
+  if (isKeyDownByKey.get(key)) {
+    const { action, direction } = keyMapping;
+    const component = getAxis2dComponent(direction);
+    const signedOne = getAxis2dSignedOne(direction);
+    const axis = axis2dsByAction.get(action);
+    axis.elements[component] += signedOne;
+  }
+};
+
+const updateButton = (input: InputState, keyMapping: KeyMappingButton) => {
+  const { buttonsByAction, isKeyDownByKey } = input;
+  const { action, key } = keyMapping;
+  const button = buttonsByAction.get(action);
+  if (isKeyDownByKey.get(key)) {
+    button.framesDown++;
+  } else {
+    button.framesDown = 0;
   }
 };

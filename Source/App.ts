@@ -22,7 +22,6 @@ import {
   InputState,
   KeyMapping,
   updateInput,
-  resetInput,
   getAxis2d,
 } from "./Input";
 
@@ -196,7 +195,6 @@ export const updateFrame = (app: App) => {
 
   updateInput(input);
   updateCamera(camera, input);
-  resetInput(input);
 
   clearTarget(context, {
     color: {
