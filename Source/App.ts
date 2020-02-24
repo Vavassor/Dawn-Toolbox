@@ -261,6 +261,7 @@ export const updateFrame = (app: App) => {
     endpoints: [new Point3([1, 0, -1]), new Point3([0, 1, 1])],
     style: { color: new Color([1, 0, 0]) },
   });
+  add3dAxes(primitiveContext);
 
   clearTarget(context, {
     color: {
@@ -307,17 +308,37 @@ export const updateFrame = (app: App) => {
   drawPrimitives(app);
 };
 
+const add3dAxes = (context: PrimitiveContext) => {
+  const origin = Point3.zero();
+  const xAxis = Point3.add(origin, Vector3.unitX());
+  const yAxis = Point3.add(origin, Vector3.unitY());
+  const zAxis = Point3.add(origin, Vector3.unitZ());
+  addLineSegment(context, {
+    endpoints: [origin, xAxis],
+    style: { color: Color.fromHexString("ff0000") },
+  });
+  addLineSegment(context, {
+    endpoints: [origin, yAxis],
+    style: { color: Color.fromHexString("00ff00") },
+  });
+  addLineSegment(context, {
+    endpoints: [origin, zAxis],
+    style: { color: Color.fromHexString("0000ff") },
+  });
+};
+
 const batchLineSegment = (
   context: GloContext,
   batch: Batch,
   lineSegment: LineSegment
 ) => {
-  const { endpoints } = lineSegment;
+  const { endpoints, style } = lineSegment;
 
   const componentCount = 4;
   const stride = 4 * componentCount;
   const elementCount = endpoints.length;
-  const content = new ArrayBuffer(stride * elementCount);
+  const byteCount = stride * elementCount;
+  const content = new ArrayBuffer(byteCount);
   const floatView = new Float32Array(content);
   const uint32View = new Uint32Array(content);
   for (let i = 0; i < elementCount; i++) {
@@ -325,7 +346,7 @@ const batchLineSegment = (
     for (let j = 0; j < endpoint.elements.length; j++) {
       floatView[componentCount * i + j] = endpoint.elements[j];
     }
-    uint32View[componentCount * i + 3] = 0xff0000;
+    uint32View[componentCount * i + 3] = Color.toRgbaInteger(style.color);
   }
 
   updateBuffer(context, {
@@ -334,7 +355,7 @@ const batchLineSegment = (
     offsetInBytes: batch.byteCount,
   });
 
-  batch.byteCount += stride;
+  batch.byteCount += byteCount;
   batch.elementCount += elementCount;
 };
 
@@ -347,12 +368,14 @@ const drawPrimitives = (app: App) => {
     elementCount: 0,
   };
 
+  const bytesPerVertex = 16;
+
   setPipeline(context, pipelines.line);
 
   for (const primitive of primitiveContext.primitives) {
-    const vertexCount = getVertexCount(primitive);
+    const byteCount = bytesPerVertex * getVertexCount(primitive);
 
-    if (batch.elementCount + vertexCount >= PRIMITIVE_BATCH_CAP_IN_BYTES) {
+    if (batch.byteCount + byteCount >= PRIMITIVE_BATCH_CAP_IN_BYTES) {
       draw(context, {
         indicesCount: batch.elementCount,
         startIndex: 0,
