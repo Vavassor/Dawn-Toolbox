@@ -146,6 +146,17 @@ export const createPipeline = (
   };
 };
 
+export const getBytesPerVertex = (
+  vertexLayout: VertexLayout,
+  bufferIndex: number
+): number => {
+  const { attributes } = vertexLayout;
+  const foundAttribute = attributes.find(
+    attribute => attribute.bufferIndex === bufferIndex
+  );
+  return foundAttribute.stride;
+};
+
 export const setPipeline = (context: GloContext, pipeline: Pipeline): void => {
   const { gl, state } = context;
   gl.useProgram(pipeline.shader.handle);

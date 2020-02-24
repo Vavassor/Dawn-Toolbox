@@ -16,10 +16,27 @@ export interface LineStyle {
   color: Color;
 }
 
-export type Primitive = LineSegment;
+export type Primitive = LineSegment | Sphere;
 
 export interface PrimitiveContext {
   primitives: Primitive[];
+}
+
+export interface Sphere {
+  center: Point3;
+  radius: number;
+  style: SurfaceStyle;
+  type: "SPHERE";
+}
+
+export interface SphereSpec {
+  center: Point3;
+  radius: number;
+  style: SurfaceStyle;
+}
+
+export interface SurfaceStyle {
+  color: Color;
 }
 
 export const addLineSegment = (
@@ -35,6 +52,17 @@ export const addLineSegment = (
   context.primitives.push(lineSegment);
 };
 
+export const addSphere = (context: PrimitiveContext, spec: SphereSpec) => {
+  const { center, radius, style } = spec;
+  const sphere: Sphere = {
+    center,
+    radius,
+    style,
+    type: "SPHERE",
+  };
+  context.primitives.push(sphere);
+};
+
 export const createPrimitiveContext = (): PrimitiveContext => {
   return {
     primitives: [],
@@ -45,6 +73,17 @@ export const getVertexCount = (primitive: Primitive) => {
   switch (primitive.type) {
     case "LINE_SEGMENT":
       return 2;
+    case "SPHERE": {
+      const meridianCount = 10;
+      const parallelCount = 10;
+      const verticesPerCell = 6;
+      const verticesPerPoleTriangle = 3;
+      const rowCount = parallelCount - 1;
+      const columnCount = meridianCount - 1;
+      const vertexCountWithoutPoles = verticesPerCell * rowCount * columnCount;
+      const poleVertexCount = 2 * verticesPerPoleTriangle * meridianCount;
+      return vertexCountWithoutPoles + poleVertexCount;
+    }
   }
 };
 

@@ -1,7 +1,12 @@
 import { Color } from "./Color";
 import { GloBuffer, createBuffer, updateBuffer } from "./WebGL/GloBuffer";
 import { clearTarget, GloContext, draw } from "./WebGL/GloContext";
-import { Pipeline, createPipeline, setPipeline } from "./WebGL/Pipeline";
+import {
+  Pipeline,
+  createPipeline,
+  setPipeline,
+  getBytesPerVertex,
+} from "./WebGL/Pipeline";
 import { createShader } from "./WebGL/Shader";
 import {
   createShaderProgram,
@@ -31,7 +36,10 @@ import {
   PrimitiveContext,
   resetPrimitives,
   getVertexCount,
+  addSphere,
+  Sphere,
 } from "./Primitive";
+import { COLORS } from "./Colors";
 
 const PRIMITIVE_BATCH_CAP_IN_BYTES = 16 * 1000;
 
@@ -259,9 +267,14 @@ export const updateFrame = (app: App) => {
 
   addLineSegment(primitiveContext, {
     endpoints: [new Point3([1, 0, -1]), new Point3([0, 1, 1])],
-    style: { color: new Color([1, 0, 0]) },
+    style: { color: COLORS.white },
   });
   addAxisIndicator(primitiveContext);
+  addSphere(primitiveContext, {
+    center: new Point3([2, 2, 1]),
+    radius: 1,
+    style: { color: COLORS.white },
+  });
 
   clearTarget(context, {
     color: {
@@ -310,20 +323,20 @@ export const updateFrame = (app: App) => {
 
 const addAxisIndicator = (context: PrimitiveContext) => {
   const origin = Point3.zero();
-  const xAxis = Point3.add(origin, Vector3.unitX());
-  const yAxis = Point3.add(origin, Vector3.unitY());
-  const zAxis = Point3.add(origin, Vector3.unitZ());
+  const xAxis = Point3.fromVector3(Vector3.unitX());
+  const yAxis = Point3.fromVector3(Vector3.unitY());
+  const zAxis = Point3.fromVector3(Vector3.unitZ());
   addLineSegment(context, {
     endpoints: [origin, xAxis],
-    style: { color: Color.fromHexString("ff0000") },
+    style: { color: COLORS.orange },
   });
   addLineSegment(context, {
     endpoints: [origin, yAxis],
-    style: { color: Color.fromHexString("00ff00") },
+    style: { color: COLORS.lightGreen },
   });
   addLineSegment(context, {
     endpoints: [origin, zAxis],
-    style: { color: Color.fromHexString("0000ff") },
+    style: { color: COLORS.blue },
   });
 };
 
@@ -359,7 +372,23 @@ const batchLineSegment = (
   batch.elementCount += elementCount;
 };
 
-const drawPrimitives = (app: App) => {
+const batchSphere = (context: GloContext, batch: Batch, sphere: Sphere) => {
+  throw new Error(`'batchSphere' is not implemented.`);
+};
+
+const completeBatch = (context: GloContext, batch: Batch) => {
+  if (batch.elementCount === 0) {
+    return;
+  }
+
+  draw(context, {
+    indicesCount: batch.elementCount,
+    startIndex: 0,
+    vertexBuffers: [batch.buffer],
+  });
+};
+
+const drawLines = (app: App) => {
   const { buffers, context, pipelines, primitiveContext } = app;
 
   const batch = {
@@ -368,23 +397,17 @@ const drawPrimitives = (app: App) => {
     elementCount: 0,
   };
 
-  const bytesPerVertex = 16;
+  const linePrimitives = primitiveContext.primitives.filter(
+    primitive => primitive.type === "LINE_SEGMENT"
+  );
 
   setPipeline(context, pipelines.line);
+  const bytesPerVertex = getBytesPerVertex(pipelines.line.vertexLayout, 0);
 
-  for (const primitive of primitiveContext.primitives) {
+  for (const primitive of linePrimitives) {
     const byteCount = bytesPerVertex * getVertexCount(primitive);
 
-    if (batch.byteCount + byteCount >= PRIMITIVE_BATCH_CAP_IN_BYTES) {
-      draw(context, {
-        indicesCount: batch.elementCount,
-        startIndex: 0,
-        vertexBuffers: [batch.buffer],
-      });
-
-      batch.byteCount = 0;
-      batch.elementCount = 0;
-    }
+    drawBatchIfFull(context, batch, byteCount);
 
     switch (primitive.type) {
       case "LINE_SEGMENT":
@@ -393,13 +416,62 @@ const drawPrimitives = (app: App) => {
     }
   }
 
-  if (batch.elementCount > 0) {
-    draw(context, {
-      indicesCount: batch.elementCount,
-      startIndex: 0,
-      vertexBuffers: [batch.buffer],
-    });
+  completeBatch(context, batch);
+};
+
+const drawBatchIfFull = (
+  context: GloContext,
+  batch: Batch,
+  byteCount: number
+) => {
+  if (batch.byteCount + byteCount < PRIMITIVE_BATCH_CAP_IN_BYTES) {
+    return;
   }
+
+  draw(context, {
+    indicesCount: batch.elementCount,
+    startIndex: 0,
+    vertexBuffers: [batch.buffer],
+  });
+
+  batch.byteCount = 0;
+  batch.elementCount = 0;
+};
+
+const drawPrimitives = (app: App) => {
+  drawLines(app);
+  drawSurfaces(app);
+};
+
+const drawSurfaces = (app: App) => {
+  const { buffers, context, pipelines, primitiveContext } = app;
+
+  const batch = {
+    buffer: buffers.primitive,
+    byteCount: 0,
+    elementCount: 0,
+  };
+
+  const surfacePrimitives = primitiveContext.primitives.filter(
+    primitive => primitive.type === "SPHERE"
+  );
+
+  setPipeline(context, pipelines.test);
+  const bytesPerVertex = getBytesPerVertex(pipelines.line.vertexLayout, 0);
+
+  for (const primitive of surfacePrimitives) {
+    const byteCount = bytesPerVertex * getVertexCount(primitive);
+
+    drawBatchIfFull(context, batch, byteCount);
+
+    switch (primitive.type) {
+      case "SPHERE":
+        batchSphere(context, batch, primitive);
+        break;
+    }
+  }
+
+  completeBatch(context, batch);
 };
 
 const updateCamera = (camera: Camera, input: InputState) => {

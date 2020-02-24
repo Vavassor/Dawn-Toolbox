@@ -39,6 +39,10 @@ export class Point3 {
     return new Point3([p.x + v.x, p.y + v.y, p.z + v.z]);
   }
 
+  static fromVector3(v: Vector3): Point3 {
+    return new Point3([v.x, v.y, v.z]);
+  }
+
   static subtract(a: Point3, b: Point3): Vector3 {
     return new Vector3([a.x - b.x, a.y - b.y, a.z - b.z]);
   }
