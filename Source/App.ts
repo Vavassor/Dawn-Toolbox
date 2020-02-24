@@ -261,7 +261,7 @@ export const updateFrame = (app: App) => {
     endpoints: [new Point3([1, 0, -1]), new Point3([0, 1, 1])],
     style: { color: new Color([1, 0, 0]) },
   });
-  add3dAxes(primitiveContext);
+  addAxisIndicator(primitiveContext);
 
   clearTarget(context, {
     color: {
@@ -308,7 +308,7 @@ export const updateFrame = (app: App) => {
   drawPrimitives(app);
 };
 
-const add3dAxes = (context: PrimitiveContext) => {
+const addAxisIndicator = (context: PrimitiveContext) => {
   const origin = Point3.zero();
   const xAxis = Point3.add(origin, Vector3.unitX());
   const yAxis = Point3.add(origin, Vector3.unitY());
