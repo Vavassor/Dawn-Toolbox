@@ -1,5 +1,5 @@
 import { Color } from "./Color";
-import { GloBuffer, createBuffer } from "./WebGL/GloBuffer";
+import { GloBuffer, createBuffer, updateBuffer } from "./WebGL/GloBuffer";
 import { clearTarget, GloContext, draw } from "./WebGL/GloContext";
 import { Pipeline, createPipeline, setPipeline } from "./WebGL/Pipeline";
 import { createShader } from "./WebGL/Shader";
@@ -24,6 +24,16 @@ import {
   updateInput,
   getAxis2d,
 } from "./Input";
+import {
+  addLineSegment,
+  createPrimitiveContext,
+  LineSegment,
+  PrimitiveContext,
+  resetPrimitives,
+  getVertexCount,
+} from "./Primitive";
+
+const PRIMITIVE_BATCH_CAP_IN_BYTES = 16 * 1000;
 
 export interface App {
   buffers: BufferSet;
@@ -33,10 +43,18 @@ export interface App {
   handleMouseMove?: HandleMouseMove;
   input: InputState;
   pipelines: PipelineSet;
+  primitiveContext: PrimitiveContext;
   programs: ShaderProgramSet;
 }
 
+interface Batch {
+  buffer: GloBuffer;
+  byteCount: number;
+  elementCount: number;
+}
+
 interface BufferSet {
+  primitive: GloBuffer;
   test: GloBuffer;
 }
 
@@ -49,6 +67,7 @@ interface Camera {
 export type HandleMouseMove = (event: MouseEvent) => void;
 
 interface PipelineSet {
+  line: Pipeline;
   test: Pipeline;
 }
 
@@ -73,6 +92,7 @@ export const createApp = (
     context,
     input: createInputState(keyMappings),
     pipelines: createPipelineSet(context, programs),
+    primitiveContext: createPrimitiveContext(),
     programs,
   };
 };
@@ -100,14 +120,21 @@ const createBufferSet = (context: GloContext): BufferSet => {
   floatView[10] = 0;
   uint32View[11] = 0xffff0000;
 
-  const buffer = createBuffer(context, {
+  const test = createBuffer(context, {
     content: arrayBuffer,
     format: "VERTEX_BUFFER",
     usage: "STATIC",
   });
 
+  const primitive = createBuffer(context, {
+    byteCount: PRIMITIVE_BATCH_CAP_IN_BYTES,
+    format: "VERTEX_BUFFER",
+    usage: "DYNAMIC",
+  });
+
   return {
-    test: buffer,
+    primitive,
+    test,
   };
 };
 
@@ -144,7 +171,21 @@ const createPipelineSet = (
   context: GloContext,
   programs: ShaderProgramSet
 ): PipelineSet => {
-  const pipeline = createPipeline(context, {
+  const line = createPipeline(context, {
+    inputAssembly: {
+      indexType: "NONE",
+      primitiveTopology: "LINE_LIST",
+    },
+    shader: programs.basic,
+    vertexLayout: {
+      attributes: [
+        { bufferIndex: 0, format: "FLOAT3", name: "vertex_position" },
+        { bufferIndex: 0, format: "UBYTE4_NORM", name: "vertex_color" },
+      ],
+    },
+  });
+
+  const test = createPipeline(context, {
     inputAssembly: {
       indexType: "NONE",
       primitiveTopology: "TRIANGLE_LIST",
@@ -159,7 +200,8 @@ const createPipelineSet = (
   });
 
   return {
-    test: pipeline,
+    line,
+    test,
   };
 };
 
@@ -191,10 +233,24 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
 };
 
 export const updateFrame = (app: App) => {
-  const { buffers, camera, context, input, pipelines, programs } = app;
+  const {
+    buffers,
+    camera,
+    context,
+    input,
+    pipelines,
+    primitiveContext,
+    programs,
+  } = app;
 
   updateInput(input);
   updateCamera(camera, input);
+  resetPrimitives(primitiveContext);
+
+  addLineSegment(primitiveContext, {
+    endpoints: [new Point3([1, 0, -1]), new Point3([0, 1, 3])],
+    style: { color: new Color([1, 0, 0]) },
+  });
 
   clearTarget(context, {
     color: {
@@ -237,6 +293,80 @@ export const updateFrame = (app: App) => {
     startIndex: 0,
     vertexBuffers: [buffers.test],
   });
+
+  drawPrimitives(app);
+};
+
+const batchLineSegment = (
+  context: GloContext,
+  batch: Batch,
+  lineSegment: LineSegment
+) => {
+  const { endpoints } = lineSegment;
+
+  const componentCount = 4;
+  const stride = 4 * componentCount;
+  const elementCount = endpoints.length;
+  const content = new ArrayBuffer(stride * elementCount);
+  const floatView = new Float32Array(content);
+  const uint32View = new Uint32Array(content);
+  for (let i = 0; i < elementCount; i++) {
+    const endpoint = endpoints[i];
+    for (let j = 0; j < endpoint.elements.length; j++) {
+      floatView[componentCount * i + j] = endpoint.elements[j];
+    }
+    uint32View[componentCount * i + 3] = 0xff0000;
+  }
+
+  updateBuffer(context, {
+    buffer: batch.buffer,
+    content,
+    offsetInBytes: batch.byteCount,
+  });
+
+  batch.byteCount += stride;
+  batch.elementCount += elementCount;
+};
+
+const drawPrimitives = (app: App) => {
+  const { buffers, context, pipelines, primitiveContext } = app;
+
+  const batch = {
+    buffer: buffers.primitive,
+    byteCount: 0,
+    elementCount: 0,
+  };
+
+  setPipeline(context, pipelines.line);
+
+  for (const primitive of primitiveContext.primitives) {
+    const vertexCount = getVertexCount(primitive);
+
+    if (batch.elementCount + vertexCount >= PRIMITIVE_BATCH_CAP_IN_BYTES) {
+      draw(context, {
+        indicesCount: batch.elementCount,
+        startIndex: 0,
+        vertexBuffers: [batch.buffer],
+      });
+
+      batch.byteCount = 0;
+      batch.elementCount = 0;
+    }
+
+    switch (primitive.type) {
+      case "LINE_SEGMENT":
+        batchLineSegment(context, batch, primitive);
+        break;
+    }
+  }
+
+  if (batch.elementCount > 0) {
+    draw(context, {
+      indicesCount: batch.elementCount,
+      startIndex: 0,
+      vertexBuffers: [batch.buffer],
+    });
+  }
 };
 
 const updateCamera = (camera: Camera, input: InputState) => {

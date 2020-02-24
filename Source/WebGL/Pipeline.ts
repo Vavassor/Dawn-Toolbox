@@ -25,7 +25,7 @@ export interface PipelineSpec {
   vertexLayout: VertexLayoutSpec;
 }
 
-export type PrimitiveTopology = "TRIANGLE_LIST";
+export type PrimitiveTopology = "LINE_LIST" | "TRIANGLE_LIST";
 
 export interface VertexAttribute {
   bufferIndex: number;
@@ -161,6 +161,8 @@ const getPrimitiveTopology = (
 ): GLenum => {
   const { gl } = context;
   switch (primitiveTopology) {
+    case "LINE_LIST":
+      return gl.LINES;
     case "TRIANGLE_LIST":
       return gl.TRIANGLES;
     default:
