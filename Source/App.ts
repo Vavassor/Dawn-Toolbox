@@ -172,6 +172,11 @@ const createPipelineSet = (
   programs: ShaderProgramSet
 ): PipelineSet => {
   const line = createPipeline(context, {
+    depthStencil: {
+      shouldCompareDepth: true,
+      shouldWriteDepth: true,
+      shouldUseStencil: false,
+    },
     inputAssembly: {
       indexType: "NONE",
       primitiveTopology: "LINE_LIST",
@@ -186,6 +191,11 @@ const createPipelineSet = (
   });
 
   const test = createPipeline(context, {
+    depthStencil: {
+      shouldCompareDepth: true,
+      shouldWriteDepth: true,
+      shouldUseStencil: false,
+    },
     inputAssembly: {
       indexType: "NONE",
       primitiveTopology: "TRIANGLE_LIST",
@@ -248,7 +258,7 @@ export const updateFrame = (app: App) => {
   resetPrimitives(primitiveContext);
 
   addLineSegment(primitiveContext, {
-    endpoints: [new Point3([1, 0, -1]), new Point3([0, 1, 3])],
+    endpoints: [new Point3([1, 0, -1]), new Point3([0, 1, 1])],
     style: { color: new Color([1, 0, 0]) },
   });
 
