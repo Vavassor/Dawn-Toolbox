@@ -2,10 +2,25 @@ import { GloContext } from "./GloContext";
 
 export type BufferFormat = "INDEX_BUFFER" | "VERTEX_BUFFER";
 
-export interface BufferSpec {
-  content: ArrayBufferView | ArrayBuffer | null;
+export type BufferSpec = BufferSpecContent | BufferSpecEmpty;
+
+interface BufferSpecBase {
   format: BufferFormat;
   usage: BufferUsage;
+}
+
+interface BufferSpecContent extends BufferSpecBase {
+  content: ArrayBufferView | ArrayBuffer;
+}
+
+interface BufferSpecEmpty extends BufferSpecBase {
+  byteCount: number;
+}
+
+export interface BufferUpdate {
+  buffer: GloBuffer;
+  content: ArrayBufferView | ArrayBuffer;
+  offsetInBytes: number;
 }
 
 export type BufferUsage = "DYNAMIC" | "STATIC";
@@ -20,18 +35,29 @@ export const createBuffer = (
   spec: BufferSpec
 ): GloBuffer => {
   const { gl } = context;
-  const { content } = spec;
   const usage = getBufferUsage(context, spec.usage);
   const format = getBufferFormat(context, spec.format);
 
   const buffer = gl.createBuffer();
   gl.bindBuffer(format, buffer);
-  gl.bufferData(format, content, usage);
+  if ("content" in spec) {
+    gl.bufferData(format, spec.content, usage);
+  } else {
+    gl.bufferData(format, spec.byteCount, usage);
+  }
 
   return {
     format,
     handle: buffer,
   };
+};
+
+export const updateBuffer = (context: GloContext, update: BufferUpdate) => {
+  const { gl } = context;
+  const { buffer, offsetInBytes, content } = update;
+  const { format, handle } = buffer;
+  gl.bindBuffer(format, handle);
+  gl.bufferSubData(format, offsetInBytes, content);
 };
 
 const getBufferFormat = (

@@ -67,12 +67,24 @@ export class Vector3 {
     return new Vector3([v.x / s, v.y / s, v.z / s]);
   }
 
-  static fromVector2(vector: Vector2): Vector3 {
-    return new Vector3([vector.x, vector.y, 0]);
-  }
-
   static fromPoint3(point: Point3): Vector3 {
     return new Vector3([point.x, point.y, point.z]);
+  }
+
+  static fromSphericalCoordinates(
+    radius: number,
+    inclination: number,
+    azimuth: number
+  ): Vector3 {
+    return new Vector3([
+      radius * Math.sin(inclination) * Math.cos(azimuth),
+      radius * Math.sin(inclination) * Math.sin(azimuth),
+      radius * Math.cos(inclination),
+    ]);
+  }
+
+  static fromVector2(vector: Vector2): Vector3 {
+    return new Vector3([vector.x, vector.y, 0]);
   }
 
   static multiply(s: number, v: Vector3): Vector3 {

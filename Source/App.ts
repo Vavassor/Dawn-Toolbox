@@ -1,7 +1,12 @@
 import { Color } from "./Color";
-import { GloBuffer, createBuffer } from "./WebGL/GloBuffer";
+import { GloBuffer, createBuffer, updateBuffer } from "./WebGL/GloBuffer";
 import { clearTarget, GloContext, draw } from "./WebGL/GloContext";
-import { Pipeline, createPipeline, setPipeline } from "./WebGL/Pipeline";
+import {
+  Pipeline,
+  createPipeline,
+  setPipeline,
+  getBytesPerVertex,
+} from "./WebGL/Pipeline";
 import { createShader } from "./WebGL/Shader";
 import {
   createShaderProgram,
@@ -22,9 +27,22 @@ import {
   InputState,
   KeyMapping,
   updateInput,
-  resetInput,
   getAxis2d,
 } from "./Input";
+import {
+  addLineSegment,
+  createPrimitiveContext,
+  LineSegment,
+  PrimitiveContext,
+  resetPrimitives,
+  getVertexCount,
+  addSphere,
+  Sphere,
+  getIndexCount,
+} from "./Primitive";
+import { COLORS } from "./Colors";
+
+const PRIMITIVE_BATCH_CAP_IN_BYTES = 1024;
 
 export interface App {
   buffers: BufferSet;
@@ -34,10 +52,25 @@ export interface App {
   handleMouseMove?: HandleMouseMove;
   input: InputState;
   pipelines: PipelineSet;
+  primitiveContext: PrimitiveContext;
   programs: ShaderProgramSet;
 }
 
+interface Batch {
+  index: {
+    buffer: GloBuffer;
+    byteCount: number;
+  };
+  indexCount: number;
+  vertex: {
+    buffer: GloBuffer;
+    byteCount: number;
+  };
+}
+
 interface BufferSet {
+  primitiveIndex: GloBuffer;
+  primitiveVertex: GloBuffer;
   test: GloBuffer;
 }
 
@@ -50,6 +83,8 @@ interface Camera {
 export type HandleMouseMove = (event: MouseEvent) => void;
 
 interface PipelineSet {
+  line: Pipeline;
+  surface: Pipeline;
   test: Pipeline;
 }
 
@@ -74,6 +109,7 @@ export const createApp = (
     context,
     input: createInputState(keyMappings),
     pipelines: createPipelineSet(context, programs),
+    primitiveContext: createPrimitiveContext(),
     programs,
   };
 };
@@ -101,14 +137,28 @@ const createBufferSet = (context: GloContext): BufferSet => {
   floatView[10] = 0;
   uint32View[11] = 0xffff0000;
 
-  const buffer = createBuffer(context, {
+  const test = createBuffer(context, {
     content: arrayBuffer,
     format: "VERTEX_BUFFER",
     usage: "STATIC",
   });
 
+  const primitiveIndex = createBuffer(context, {
+    byteCount: PRIMITIVE_BATCH_CAP_IN_BYTES,
+    format: "INDEX_BUFFER",
+    usage: "DYNAMIC",
+  });
+
+  const primitiveVertex = createBuffer(context, {
+    byteCount: PRIMITIVE_BATCH_CAP_IN_BYTES,
+    format: "VERTEX_BUFFER",
+    usage: "DYNAMIC",
+  });
+
   return {
-    test: buffer,
+    primitiveVertex,
+    primitiveIndex,
+    test,
   };
 };
 
@@ -145,7 +195,50 @@ const createPipelineSet = (
   context: GloContext,
   programs: ShaderProgramSet
 ): PipelineSet => {
-  const pipeline = createPipeline(context, {
+  const line = createPipeline(context, {
+    depthStencil: {
+      shouldCompareDepth: true,
+      shouldWriteDepth: true,
+      shouldUseStencil: false,
+    },
+    inputAssembly: {
+      indexType: "UINT16",
+      primitiveTopology: "LINE_LIST",
+    },
+    shader: programs.basic,
+    vertexLayout: {
+      attributes: [
+        { bufferIndex: 0, format: "FLOAT3", name: "vertex_position" },
+        { bufferIndex: 0, format: "UBYTE4_NORM", name: "vertex_color" },
+      ],
+    },
+  });
+
+  const surface = createPipeline(context, {
+    depthStencil: {
+      shouldCompareDepth: true,
+      shouldWriteDepth: true,
+      shouldUseStencil: false,
+    },
+    inputAssembly: {
+      indexType: "UINT16",
+      primitiveTopology: "TRIANGLE_LIST",
+    },
+    shader: programs.basic,
+    vertexLayout: {
+      attributes: [
+        { bufferIndex: 0, format: "FLOAT3", name: "vertex_position" },
+        { bufferIndex: 0, format: "UBYTE4_NORM", name: "vertex_color" },
+      ],
+    },
+  });
+
+  const test = createPipeline(context, {
+    depthStencil: {
+      shouldCompareDepth: true,
+      shouldWriteDepth: true,
+      shouldUseStencil: false,
+    },
     inputAssembly: {
       indexType: "NONE",
       primitiveTopology: "TRIANGLE_LIST",
@@ -160,7 +253,9 @@ const createPipelineSet = (
   });
 
   return {
-    test: pipeline,
+    line,
+    surface,
+    test,
   };
 };
 
@@ -192,11 +287,35 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
 };
 
 export const updateFrame = (app: App) => {
-  const { buffers, camera, context, input, pipelines, programs } = app;
+  const {
+    buffers,
+    camera,
+    context,
+    input,
+    pipelines,
+    primitiveContext,
+    programs,
+  } = app;
 
   updateInput(input);
   updateCamera(camera, input);
-  resetInput(input);
+  resetPrimitives(primitiveContext);
+
+  addLineSegment(primitiveContext, {
+    endpoints: [new Point3([1, 0, -1]), new Point3([0, 1, 1])],
+    style: { color: COLORS.white },
+  });
+  addAxisIndicator(primitiveContext);
+  addSphere(primitiveContext, {
+    center: new Point3([2, 2, 1]),
+    radius: 1,
+    style: { color: COLORS.white },
+  });
+  addSphere(primitiveContext, {
+    center: new Point3([-2, 2, -1]),
+    radius: 1,
+    style: { color: COLORS.white },
+  });
 
   clearTarget(context, {
     color: {
@@ -239,6 +358,328 @@ export const updateFrame = (app: App) => {
     startIndex: 0,
     vertexBuffers: [buffers.test],
   });
+
+  drawPrimitives(app);
+};
+
+const addAxisIndicator = (context: PrimitiveContext) => {
+  const origin = Point3.zero();
+  const xAxis = Point3.fromVector3(Vector3.unitX());
+  const yAxis = Point3.fromVector3(Vector3.unitY());
+  const zAxis = Point3.fromVector3(Vector3.unitZ());
+  addLineSegment(context, {
+    endpoints: [origin, xAxis],
+    style: { color: COLORS.orange },
+  });
+  addLineSegment(context, {
+    endpoints: [origin, yAxis],
+    style: { color: COLORS.lightGreen },
+  });
+  addLineSegment(context, {
+    endpoints: [origin, zAxis],
+    style: { color: COLORS.blue },
+  });
+};
+
+const batchLineSegment = (
+  vertexBuffer: ArrayBuffer,
+  indexBuffer: ArrayBuffer,
+  lineSegment: LineSegment,
+  baseIndex: number
+) => {
+  const { endpoints, style } = lineSegment;
+
+  const componentCount = 4;
+  const color = Color.toRgbaInteger(style.color);
+
+  const floatView = new Float32Array(vertexBuffer);
+  const uint32View = new Uint32Array(vertexBuffer);
+  for (let i = 0; i < endpoints.length; i++) {
+    const endpoint = endpoints[i];
+    batchVertex(floatView, uint32View, componentCount * i, endpoint, color);
+  }
+
+  const uint16View = new Uint16Array(indexBuffer);
+  for (let i = 0; i < endpoints.length; i++) {
+    uint16View[i] = baseIndex + i;
+  }
+};
+
+const batchSphereIndices = (indexBuffer: ArrayBuffer, baseIndex: number) => {
+  const uint16View = new Uint16Array(indexBuffer);
+
+  const northPoleIndex = baseIndex;
+  const southPoleIndex = baseIndex + 1;
+  const indexAfterPoles = baseIndex + 2;
+
+  const meridianCount = 10;
+  const parallelCount = 6;
+  const bandCount = parallelCount - 1;
+  let writeTotal = 0;
+
+  const northCapParallel = indexAfterPoles;
+  for (let i = 0; i < meridianCount; i++) {
+    const writeIndex = 3 * i;
+    uint16View[writeIndex] = northPoleIndex;
+    uint16View[writeIndex + 1] = i + northCapParallel;
+    uint16View[writeIndex + 2] = ((i + 1) % meridianCount) + northCapParallel;
+  }
+  writeTotal += 3 * meridianCount;
+
+  const southCapParallel = meridianCount * bandCount + indexAfterPoles;
+  for (let i = 0; i < meridianCount; i++) {
+    const writeIndex = 3 * i + writeTotal;
+    uint16View[writeIndex] = southPoleIndex;
+    uint16View[writeIndex + 1] = ((i + 1) % meridianCount) + southCapParallel;
+    uint16View[writeIndex + 2] = i + southCapParallel;
+  }
+  writeTotal += 3 * meridianCount;
+
+  for (let i = 0; i < bandCount; i++) {
+    const parallel = [
+      meridianCount * i,
+      meridianCount * ((i + 1) % parallelCount),
+    ];
+    for (let j = 0; j < meridianCount; j++) {
+      const writeIndex = 6 * (meridianCount * i + j) + writeTotal;
+      const meridian = [j, (j + 1) % meridianCount];
+      const indices = [
+        meridian[0] + parallel[0] + indexAfterPoles,
+        meridian[0] + parallel[1] + indexAfterPoles,
+        meridian[1] + parallel[1] + indexAfterPoles,
+        meridian[1] + parallel[0] + indexAfterPoles,
+      ];
+      uint16View[writeIndex] = indices[0];
+      uint16View[writeIndex + 1] = indices[1];
+      uint16View[writeIndex + 2] = indices[2];
+      uint16View[writeIndex + 3] = indices[0];
+      uint16View[writeIndex + 4] = indices[2];
+      uint16View[writeIndex + 5] = indices[3];
+    }
+  }
+};
+
+const batchSphereVertices = (vertexBuffer: ArrayBuffer, sphere: Sphere) => {
+  const { center, radius, style } = sphere;
+
+  const componentCount = 4;
+  const floatView = new Float32Array(vertexBuffer);
+  const uint32View = new Uint32Array(vertexBuffer);
+  const color = Color.toRgbaInteger(style.color);
+
+  const meridianCount = 10;
+  const parallelCount = 6;
+  const deltaInclinationPerParallel = Math.PI / (parallelCount + 1);
+  const deltaAzimuthPerMeridian = (2 * Math.PI) / meridianCount;
+
+  const northPole = Point3.add(
+    center,
+    Vector3.multiply(radius, Vector3.unitZ())
+  );
+  batchVertex(floatView, uint32View, 0, northPole, color);
+
+  const southPole = Point3.add(
+    center,
+    Vector3.multiply(-radius, Vector3.unitZ())
+  );
+  batchVertex(floatView, uint32View, componentCount, southPole, color);
+
+  const indexAfterPoles = 2 * componentCount;
+
+  for (let parallel = 0; parallel < parallelCount; parallel++) {
+    const inclination = (parallel + 1) * deltaInclinationPerParallel;
+    for (let meridian = 0; meridian < meridianCount; meridian++) {
+      const azimuth = meridian * deltaAzimuthPerMeridian;
+      const point = Point3.add(
+        center,
+        Vector3.fromSphericalCoordinates(radius, inclination, azimuth)
+      );
+      const pointIndex = meridianCount * parallel + meridian;
+      const vertexIndex = componentCount * pointIndex + indexAfterPoles;
+      batchVertex(floatView, uint32View, vertexIndex, point, color);
+    }
+  }
+};
+
+const batchVertex = (
+  floatView: Float32Array,
+  uint32View: Uint32Array,
+  index: number,
+  point: Point3,
+  colorInteger: number
+) => {
+  floatView[index] = point.x;
+  floatView[index + 1] = point.y;
+  floatView[index + 2] = point.z;
+  uint32View[index + 3] = colorInteger;
+};
+
+const completeBatch = (context: GloContext, batch: Batch) => {
+  if (batch.indexCount === 0) {
+    return;
+  }
+
+  draw(context, {
+    indicesCount: batch.indexCount,
+    startIndex: 0,
+    indexBuffer: batch.index.buffer,
+    vertexBuffers: [batch.vertex.buffer],
+  });
+};
+
+const createBatch = (
+  vertexBuffer: GloBuffer,
+  indexBuffer: GloBuffer
+): Batch => {
+  return {
+    indexCount: 0,
+    index: {
+      buffer: indexBuffer,
+      byteCount: 0,
+    },
+    vertex: {
+      buffer: vertexBuffer,
+      byteCount: 0,
+    },
+  };
+};
+
+const drawLines = (app: App) => {
+  const { buffers, context, pipelines, primitiveContext } = app;
+
+  const batch = createBatch(buffers.primitiveVertex, buffers.primitiveIndex);
+
+  const linePrimitives = primitiveContext.primitives.filter(
+    primitive => primitive.type === "LINE_SEGMENT"
+  );
+
+  setPipeline(context, pipelines.line);
+  const bytesPerIndex = pipelines.line.inputAssembly.bytesPerIndex;
+  const bytesPerVertex = getBytesPerVertex(pipelines.line.vertexLayout, 0);
+
+  for (const primitive of linePrimitives) {
+    const indexCount = getIndexCount(primitive);
+    const vertexCount = getVertexCount(primitive);
+    const indexByteCount = bytesPerIndex * indexCount;
+    const vertexByteCount = bytesPerVertex * vertexCount;
+
+    drawBatchIfFull(context, batch, indexByteCount, vertexByteCount);
+
+    const indexBuffer = new ArrayBuffer(indexByteCount);
+    const vertexBuffer = new ArrayBuffer(vertexByteCount);
+
+    switch (primitive.type) {
+      case "LINE_SEGMENT":
+        batchLineSegment(
+          vertexBuffer,
+          indexBuffer,
+          primitive,
+          batch.indexCount
+        );
+        break;
+    }
+
+    updateBuffer(context, {
+      buffer: batch.vertex.buffer,
+      content: vertexBuffer,
+      offsetInBytes: batch.vertex.byteCount,
+    });
+
+    updateBuffer(context, {
+      buffer: batch.index.buffer,
+      content: indexBuffer,
+      offsetInBytes: batch.index.byteCount,
+    });
+
+    batch.index.byteCount += indexByteCount;
+    batch.vertex.byteCount += vertexByteCount;
+
+    batch.indexCount += indexCount;
+  }
+
+  completeBatch(context, batch);
+};
+
+const drawBatchIfFull = (
+  context: GloContext,
+  batch: Batch,
+  indexByteCount: number,
+  vertexByteCount: number
+) => {
+  if (
+    batch.index.byteCount + indexByteCount < PRIMITIVE_BATCH_CAP_IN_BYTES &&
+    batch.vertex.byteCount + vertexByteCount < PRIMITIVE_BATCH_CAP_IN_BYTES
+  ) {
+    return;
+  }
+
+  draw(context, {
+    indicesCount: batch.indexCount,
+    startIndex: 0,
+    indexBuffer: batch.index.buffer,
+    vertexBuffers: [batch.vertex.buffer],
+  });
+
+  batch.index.byteCount = 0;
+  batch.vertex.byteCount = 0;
+  batch.indexCount = 0;
+};
+
+const drawPrimitives = (app: App) => {
+  drawLines(app);
+  drawSurfaces(app);
+};
+
+const drawSurfaces = (app: App) => {
+  const { buffers, context, pipelines, primitiveContext } = app;
+
+  const batch = createBatch(buffers.primitiveVertex, buffers.primitiveIndex);
+
+  const surfacePrimitives = primitiveContext.primitives.filter(
+    primitive => primitive.type === "SPHERE"
+  );
+
+  setPipeline(context, pipelines.surface);
+  const bytesPerIndex = pipelines.surface.inputAssembly.bytesPerIndex;
+  const bytesPerVertex = getBytesPerVertex(pipelines.surface.vertexLayout, 0);
+
+  for (const primitive of surfacePrimitives) {
+    const indexCount = getIndexCount(primitive);
+    const vertexCount = getVertexCount(primitive);
+    const vertexByteCount = bytesPerVertex * vertexCount;
+    const indexByteCount = bytesPerIndex * indexCount;
+
+    drawBatchIfFull(context, batch, indexByteCount, vertexByteCount);
+
+    const indexBuffer = new ArrayBuffer(indexByteCount);
+    const vertexBuffer = new ArrayBuffer(vertexByteCount);
+
+    switch (primitive.type) {
+      case "SPHERE":
+        batchSphereVertices(vertexBuffer, primitive);
+        batchSphereIndices(indexBuffer, batch.indexCount);
+        break;
+    }
+
+    updateBuffer(context, {
+      buffer: batch.vertex.buffer,
+      content: vertexBuffer,
+      offsetInBytes: batch.vertex.byteCount,
+    });
+
+    updateBuffer(context, {
+      buffer: batch.index.buffer,
+      content: indexBuffer,
+      offsetInBytes: batch.index.byteCount,
+    });
+
+    batch.index.byteCount += indexByteCount;
+    batch.vertex.byteCount += vertexByteCount;
+
+    batch.indexCount += indexCount;
+  }
+
+  completeBatch(context, batch);
 };
 
 const updateCamera = (camera: Camera, input: InputState) => {
