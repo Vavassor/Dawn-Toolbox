@@ -43,6 +43,7 @@ interface DepthStencilStateSpecWithStencil {
 export type IndexType = "NONE" | "UINT16" | "UINT32";
 
 export interface InputAssembly {
+  bytesPerIndex: number;
   indexType: GLenum | null;
   primitiveTopology: GLenum;
 }
@@ -201,6 +202,7 @@ const createInputAssembly = (
 ): InputAssembly => {
   const { indexType, primitiveTopology } = spec;
   return {
+    bytesPerIndex: getBytesPerIndex(indexType),
     indexType: getIndexType(context, indexType),
     primitiveTopology: getPrimitiveTopology(context, primitiveTopology),
   };
@@ -289,6 +291,19 @@ const defaultStencilOpState = (context: GloContext): StencilOpState => {
     reference: 0,
     writeMask: 0xffffffff,
   };
+};
+
+const getBytesPerIndex = (indexType: IndexType): number => {
+  switch (indexType) {
+    case "NONE":
+      return 0;
+    case "UINT16":
+      return 2;
+    case "UINT32":
+      return 4;
+    default:
+      throw new Error(`Index type value ${indexType} is unknown.`);
+  }
 };
 
 const getCompareOp = (context: GloContext, compareOp: CompareOp): GLenum => {

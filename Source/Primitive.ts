@@ -69,20 +69,28 @@ export const createPrimitiveContext = (): PrimitiveContext => {
   };
 };
 
+export const getIndexCount = (primitive: Primitive) => {
+  switch (primitive.type) {
+    case "LINE_SEGMENT":
+      return 2;
+    case "SPHERE": {
+      const meridianCount = 10;
+      const parallelCount = 6;
+      const bandCount = parallelCount - 1;
+      return 6 * (meridianCount * bandCount + meridianCount);
+    }
+  }
+};
+
 export const getVertexCount = (primitive: Primitive) => {
   switch (primitive.type) {
     case "LINE_SEGMENT":
       return 2;
     case "SPHERE": {
       const meridianCount = 10;
-      const parallelCount = 10;
-      const verticesPerCell = 6;
-      const verticesPerPoleTriangle = 3;
-      const rowCount = parallelCount - 1;
-      const columnCount = meridianCount - 1;
-      const vertexCountWithoutPoles = verticesPerCell * rowCount * columnCount;
-      const poleVertexCount = 2 * verticesPerPoleTriangle * meridianCount;
-      return vertexCountWithoutPoles + poleVertexCount;
+      const parallelCount = 6;
+      const poleVertexCount = 2;
+      return meridianCount * parallelCount + poleVertexCount;
     }
   }
 };
