@@ -11,6 +11,8 @@ export type CompareOp =
   | "NEVER"
   | "NOT_EQUAL";
 
+export type CullMode = "BACK" | "FRONT" | "NONE";
+
 export interface DepthStencilState {
   backStencil: StencilOpState;
   depthCompareOp: GLenum;
@@ -40,6 +42,8 @@ interface DepthStencilStateSpecWithStencil {
   shouldUseStencil: true;
 }
 
+export type FaceWinding = "CLOCKWISE" | "COUNTERCLOCKWISE";
+
 export type IndexType = "NONE" | "UINT16" | "UINT32";
 
 export interface InputAssembly {
@@ -56,6 +60,7 @@ export interface InputAssemblySpec {
 export interface Pipeline {
   depthStencil: DepthStencilState;
   inputAssembly: InputAssembly;
+  rasterizer: RasterizerState;
   shader: ShaderProgram;
   vertexLayout: VertexLayout;
 }
@@ -63,11 +68,48 @@ export interface Pipeline {
 export interface PipelineSpec {
   depthStencil: DepthStencilStateSpec;
   inputAssembly: InputAssemblySpec;
+  rasterizer?: RasterizerStateSpec;
   shader: ShaderProgram;
   vertexLayout: VertexLayoutSpec;
 }
 
 export type PrimitiveTopology = "LINE_LIST" | "TRIANGLE_LIST";
+
+export interface RasterizerState {
+  cullMode: GLenum;
+  depthBias: RasterizerStateDepthBias;
+  faceWinding: GLenum;
+  shouldUseDepthBias: boolean;
+}
+
+interface RasterizerStateDepthBias {
+  clamp: number;
+  constant: number;
+  slope: number;
+}
+
+interface RasterizerStateSpecDepthBias {
+  clamp: number;
+  constant: number;
+  slope: number;
+}
+
+export type RasterizerStateSpec =
+  | RasterizerStateSpecWithDepthBias
+  | RasterizerStateSpecWithoutDepthBias;
+
+interface RasterizerStateSpecWithDepthBias {
+  cullMode?: CullMode;
+  depthBias: RasterizerStateSpecDepthBias;
+  faceWinding?: FaceWinding;
+  shouldUseDepthBias: true;
+}
+
+interface RasterizerStateSpecWithoutDepthBias {
+  cullMode?: CullMode;
+  faceWinding?: FaceWinding;
+  shouldUseDepthBias: false | undefined;
+}
 
 export type StencilOp =
   | "DECREMENT_AND_CLAMP"
@@ -138,10 +180,12 @@ export const createPipeline = (
   const { shader } = spec;
   const depthStencil = createDepthStencilState(context, spec.depthStencil);
   const inputAssembly = createInputAssembly(context, spec.inputAssembly);
+  const rasterizer = createRasterizerState(context, spec.rasterizer);
   const vertexLayout = createVertexLayout(context, spec.vertexLayout, shader);
   return {
     depthStencil,
     inputAssembly,
+    rasterizer,
     shader,
     vertexLayout,
   };
@@ -162,6 +206,7 @@ export const setPipeline = (context: GloContext, pipeline: Pipeline): void => {
   const { gl, state } = context;
   gl.useProgram(pipeline.shader.handle);
   setDepthStencilState(context, pipeline.depthStencil);
+  setRasterizerState(context, pipeline.rasterizer);
   state.pipeline = pipeline;
 };
 
@@ -205,6 +250,37 @@ const createInputAssembly = (
     bytesPerIndex: getBytesPerIndex(indexType),
     indexType: getIndexType(context, indexType),
     primitiveTopology: getPrimitiveTopology(context, primitiveTopology),
+  };
+};
+
+const createRasterizerState = (
+  context: GloContext,
+  spec?: RasterizerStateSpec
+): RasterizerState => {
+  const cullMode = spec?.cullMode || "BACK";
+  const faceWinding = spec?.faceWinding || "COUNTERCLOCKWISE";
+  let depthBias: RasterizerStateDepthBias;
+  if (spec?.shouldUseDepthBias) {
+    depthBias = createRasterizerStateDepthBias(spec.depthBias);
+  } else {
+    depthBias = defaultRasterizerStateDepthBias();
+  }
+  return {
+    cullMode: getCullMode(context, cullMode),
+    depthBias,
+    faceWinding: getFaceWinding(context, faceWinding),
+    shouldUseDepthBias: spec && spec.shouldUseDepthBias,
+  };
+};
+
+const createRasterizerStateDepthBias = (
+  spec: RasterizerStateSpecDepthBias
+): RasterizerStateDepthBias => {
+  const { clamp, constant, slope } = spec;
+  return {
+    clamp,
+    constant,
+    slope,
   };
 };
 
@@ -280,6 +356,14 @@ const createVertexLayout = (
   };
 };
 
+const defaultRasterizerStateDepthBias = (): RasterizerStateDepthBias => {
+  return {
+    clamp: 0,
+    constant: 0,
+    slope: 0,
+  };
+};
+
 const defaultStencilOpState = (context: GloContext): StencilOpState => {
   const { gl } = context;
   return {
@@ -327,6 +411,35 @@ const getCompareOp = (context: GloContext, compareOp: CompareOp): GLenum => {
       return gl.NOTEQUAL;
     default:
       throw new Error(`Compare op value ${compareOp} is unknown.`);
+  }
+};
+
+const getCullMode = (context: GloContext, cullMode: CullMode): GLenum => {
+  const { gl } = context;
+  switch (cullMode) {
+    case "BACK":
+      return gl.BACK;
+    case "FRONT":
+      return gl.FRONT;
+    case "NONE":
+      return gl.FRONT_AND_BACK;
+    default:
+      throw new Error(`Cull mode value ${cullMode} is unknown.`);
+  }
+};
+
+const getFaceWinding = (
+  context: GloContext,
+  faceWinding: FaceWinding
+): GLenum => {
+  const { gl } = context;
+  switch (faceWinding) {
+    case "CLOCKWISE":
+      return gl.CW;
+    case "COUNTERCLOCKWISE":
+      return gl.CCW;
+    default:
+      throw new Error(`Face winding value ${faceWinding} is unknown.`);
   }
 };
 
@@ -502,6 +615,49 @@ const setDepthStencilState = (
       priorState?.backStencil,
       gl.BACK
     );
+  }
+};
+
+const setRasterizerState = (context: GloContext, state: RasterizerState) => {
+  const { gl } = context;
+  const priorState = context.state.pipeline?.rasterizer;
+
+  if (!priorState || state.cullMode !== priorState.cullMode) {
+    const wasEnabled = priorState && priorState.cullMode !== gl.FRONT_AND_BACK;
+    const isEnabled = state.cullMode !== gl.FRONT_AND_BACK;
+    if (wasEnabled !== isEnabled) {
+      if (isEnabled) {
+        gl.enable(gl.CULL_FACE);
+      } else {
+        gl.disable(gl.CULL_FACE);
+      }
+    }
+    if (isEnabled) {
+      gl.cullFace(state.cullMode);
+    }
+  }
+
+  if (!priorState || state.faceWinding !== priorState.faceWinding) {
+    gl.frontFace(state.faceWinding);
+  }
+
+  if (
+    !priorState ||
+    state.shouldUseDepthBias !== priorState.shouldUseDepthBias
+  ) {
+    if (state.shouldUseDepthBias) {
+      gl.enable(gl.POLYGON_OFFSET_FILL);
+    } else {
+      gl.disable(gl.POLYGON_OFFSET_FILL);
+    }
+  }
+
+  if (
+    !priorState ||
+    state.depthBias.constant !== priorState.depthBias.constant ||
+    state.depthBias.slope !== priorState.depthBias.slope
+  ) {
+    gl.polygonOffset(state.depthBias.slope, state.depthBias.constant);
   }
 };
 

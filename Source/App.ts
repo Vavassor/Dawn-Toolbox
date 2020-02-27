@@ -430,8 +430,8 @@ const batchSphereIndices = (indexBuffer: ArrayBuffer, baseIndex: number) => {
   for (let i = 0; i < meridianCount; i++) {
     const writeIndex = 3 * i + writeTotal;
     uint16View[writeIndex] = southPoleIndex;
-    uint16View[writeIndex + 1] = i + southCapParallel;
-    uint16View[writeIndex + 2] = ((i + 1) % meridianCount) + southCapParallel;
+    uint16View[writeIndex + 1] = ((i + 1) % meridianCount) + southCapParallel;
+    uint16View[writeIndex + 2] = i + southCapParallel;
   }
   writeTotal += 3 * meridianCount;
 
