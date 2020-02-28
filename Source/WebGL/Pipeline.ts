@@ -162,6 +162,7 @@ export type VertexFormat =
   | "FLOAT2"
   | "FLOAT3"
   | "FLOAT4"
+  | "SBYTE4_NORM"
   | "UBYTE4_NORM"
   | "USHORT2_NORM";
 
@@ -511,6 +512,8 @@ const getVertexFormatComponentCount = (vertexFormat: VertexFormat): number => {
       return 3;
     case "FLOAT4":
       return 4;
+    case "SBYTE4_NORM":
+      return 4;
     case "UBYTE4_NORM":
       return 4;
     case "USHORT2_NORM":
@@ -527,6 +530,7 @@ const getVertexFormatIsNormalized = (vertexFormat: VertexFormat): boolean => {
     case "FLOAT3":
     case "FLOAT4":
       return false;
+    case "SBYTE4_NORM":
     case "UBYTE4_NORM":
     case "USHORT2_NORM":
       return true;
@@ -545,6 +549,8 @@ const getVertexFormatSize = (vertexFormat: VertexFormat): number => {
       return 12;
     case "FLOAT4":
       return 16;
+    case "SBYTE4_NORM":
+      return 4;
     case "UBYTE4_NORM":
       return 4;
     case "USHORT2_NORM":
@@ -565,6 +571,8 @@ const getVertexFormatType = (
     case "FLOAT3":
     case "FLOAT4":
       return gl.FLOAT;
+    case "SBYTE4_NORM":
+      return gl.BYTE;
     case "UBYTE4_NORM":
       return gl.UNSIGNED_BYTE;
     case "USHORT2_NORM":
