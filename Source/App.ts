@@ -347,6 +347,7 @@ export const updateFrame = (app: App) => {
   setPipeline(context, pipelines.test);
 
   const { position, pitch, yaw } = camera;
+  const model = Matrix4.identity();
   const view = Matrix4.turnRh(position, yaw, pitch, Vector3.unitZ());
   const projection = Matrix4.perspective(
     Math.PI / 2,
@@ -355,13 +356,12 @@ export const updateFrame = (app: App) => {
     0.001,
     100
   );
-  const model = Matrix4.identity();
   const modelView = Matrix4.multiply(view, model);
   const modelViewProjection = Matrix4.multiply(projection, modelView);
   const normalTransform = Matrix3.fromMatrix4(
     Matrix4.transpose(Matrix4.inverse(modelView))
   );
-  const lightDirection = new Vector3([0.5345, 0.8018, 0.2673]);
+  const lightDirection = new Vector3([-0.5345, -0.8018, -0.2673]);
 
   setUniformMatrix4fv(
     context,
@@ -381,7 +381,9 @@ export const updateFrame = (app: App) => {
     context,
     programs.lit,
     "light_direction",
-    Vector3.toFloat32Array(Matrix4.transformVector3(view, lightDirection))
+    Vector3.toFloat32Array(
+      Vector3.negate(Matrix4.transformVector3(view, lightDirection))
+    )
   );
   setUniformMatrix4fv(
     context,
