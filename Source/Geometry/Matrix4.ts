@@ -40,6 +40,69 @@ export class Matrix4 {
     ]);
   }
 
+  static inverse(m: Matrix4): Matrix4 {
+    const r = m.rows;
+
+    const s = [
+      r[0].x * r[1].y - r[1].x * r[0].y,
+      r[0].x * r[1].z - r[1].x * r[0].z,
+      r[0].x * r[1].w - r[1].x * r[0].w,
+      r[0].y * r[1].z - r[1].y * r[0].z,
+      r[0].y * r[1].w - r[1].y * r[0].w,
+      r[0].z * r[1].w - r[1].z * r[0].w,
+    ];
+
+    const c = [
+      r[2].x * r[3].y - r[3].x * r[2].y,
+      r[2].x * r[3].z - r[3].x * r[2].z,
+      r[2].x * r[3].w - r[3].x * r[2].w,
+      r[2].y * r[3].z - r[3].y * r[2].z,
+      r[2].y * r[3].w - r[3].y * r[2].w,
+      r[2].z * r[3].w - r[3].z * r[2].w,
+    ];
+
+    const determinant =
+      s[0] * c[5] -
+      s[1] * c[4] +
+      s[2] * c[3] +
+      s[3] * c[2] -
+      s[4] * c[1] +
+      s[5] * c[0];
+
+    if (determinant === 0) {
+      return m;
+    }
+
+    const d = 1 / determinant;
+
+    return new Matrix4([
+      new Vector4([
+        d * (r[1].y * c[5] - r[1].z * c[4] + r[1].w * c[3]),
+        d * (-r[0].y * c[5] + r[0].z * c[4] - r[0].w * c[3]),
+        d * (r[3].y * s[5] - r[3].z * s[4] + r[3].w * s[3]),
+        d * (-r[2].y * s[5] + r[2].z * s[4] - r[2].w * s[3]),
+      ]),
+      new Vector4([
+        d * (-r[1].x * c[5] + r[1].z * c[2] - r[1].w * c[1]),
+        d * (r[0].x * c[5] - r[0].z * c[2] + r[0].w * c[1]),
+        d * (-r[3].x * s[5] + r[3].z * s[2] - r[3].w * s[1]),
+        d * (r[2].x * s[5] - r[2].z * s[2] + r[2].w * s[1]),
+      ]),
+      new Vector4([
+        d * (r[1].x * c[4] - r[1].y * c[2] + r[1].w * c[0]),
+        d * (-r[0].x * c[4] + r[0].y * c[2] - r[0].w * c[0]),
+        d * (r[3].x * s[4] - r[3].y * s[2] + r[3].w * s[0]),
+        d * (-r[2].x * s[4] + r[2].y * s[2] - r[2].w * s[0]),
+      ]),
+      new Vector4([
+        d * (-r[1].x * c[3] + r[1].y * c[1] - r[1].z * c[0]),
+        d * (r[0].x * c[3] - r[0].y * c[1] + r[0].z * c[0]),
+        d * (-r[3].x * s[3] + r[3].y * s[1] - r[3].z * s[0]),
+        d * (r[2].x * s[3] - r[2].y * s[1] + r[2].z * s[0]),
+      ]),
+    ]);
+  }
+
   /**
    * Create a transform from world space to view space.
    *

@@ -7,6 +7,8 @@ import {
   createShaderProgram,
   ShaderProgram,
   setUniformMatrix4fv,
+  setUniformMatrix3fv,
+  setUniform3fv,
 } from "./WebGL/ShaderProgram";
 import basicPixelSource from "./Shaders/basic.ps.glsl";
 import basicVertexSource from "./Shaders/basic.vs.glsl";
@@ -35,6 +37,7 @@ import {
 } from "./Primitive";
 import { COLORS } from "./Colors";
 import { drawPrimitives, PRIMITIVE_BATCH_CAP_IN_BYTES } from "./PrimitiveDraw";
+import { Matrix3 } from "./Geometry/Matrix3";
 
 export interface App {
   buffers: BufferSet;
@@ -278,7 +281,7 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
       pixel: litPixelShader,
       vertex: litVertexShader,
     },
-    uniforms: ["model_view_projection"],
+    uniforms: ["light_direction", "model_view_projection", "normal_transform"],
     vertexLayout: {
       attributes: [
         { name: "vertex_position" },
@@ -352,7 +355,13 @@ export const updateFrame = (app: App) => {
     0.001,
     100
   );
-  const modelViewProjection = Matrix4.multiply(projection, view);
+  const model = Matrix4.identity();
+  const modelView = Matrix4.multiply(view, model);
+  const modelViewProjection = Matrix4.multiply(projection, modelView);
+  const normalTransform = Matrix3.fromMatrix4(
+    Matrix4.transpose(Matrix4.inverse(modelView))
+  );
+  const lightDirection = new Vector3([0.5345, 0.8018, 0.2673]);
 
   setUniformMatrix4fv(
     context,
@@ -368,11 +377,23 @@ export const updateFrame = (app: App) => {
   });
 
   setPipeline(context, pipelines.surface);
+  setUniform3fv(
+    context,
+    programs.lit,
+    "light_direction",
+    Vector3.toFloat32Array(Matrix4.transformVector3(view, lightDirection))
+  );
   setUniformMatrix4fv(
     context,
     programs.lit,
     "model_view_projection",
     Matrix4.toFloat32Array(Matrix4.transpose(modelViewProjection))
+  );
+  setUniformMatrix3fv(
+    context,
+    programs.lit,
+    "normal_transform",
+    Matrix3.toFloat32Array(Matrix3.transpose(normalTransform))
   );
 
   drawPrimitives(app);
