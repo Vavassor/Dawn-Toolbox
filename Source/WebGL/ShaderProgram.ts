@@ -72,6 +72,17 @@ export const setUniform1i = (
   gl.uniform1i(uniformLocations.get(name), value);
 };
 
+export const setUniform3fv = (
+  context: GloContext,
+  program: ShaderProgram,
+  name: string,
+  value: Float32List
+) => {
+  const { gl } = context;
+  const { uniformLocations } = program;
+  gl.uniform3fv(uniformLocations.get(name), value);
+};
+
 export const setUniform4fv = (
   context: GloContext,
   program: ShaderProgram,
@@ -81,6 +92,17 @@ export const setUniform4fv = (
   const { gl } = context;
   const { uniformLocations } = program;
   gl.uniform4fv(uniformLocations.get(name), value);
+};
+
+export const setUniformMatrix3fv = (
+  context: GloContext,
+  program: ShaderProgram,
+  name: string,
+  value: Float32List
+) => {
+  const { gl } = context;
+  const { uniformLocations } = program;
+  gl.uniformMatrix3fv(uniformLocations.get(name), false, value);
 };
 
 export const setUniformMatrix4fv = (

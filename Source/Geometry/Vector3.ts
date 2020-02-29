@@ -1,5 +1,6 @@
 import { Point3 } from "./Point3";
 import { Vector2 } from "./Vector2";
+import { Vector4 } from "./Vector4";
 
 export class Vector3 {
   elements: number[];
@@ -87,6 +88,10 @@ export class Vector3 {
     return new Vector3([vector.x, vector.y, 0]);
   }
 
+  static fromVector4(vector: Vector4): Vector3 {
+    return new Vector3([vector.x, vector.y, vector.z]);
+  }
+
   static multiply(s: number, v: Vector3): Vector3 {
     return new Vector3([s * v.x, s * v.y, s * v.z]);
   }
@@ -117,6 +122,10 @@ export class Vector3 {
 
   static subtract(a: Vector3, b: Vector3): Vector3 {
     return new Vector3([a.x - b.x, a.y - b.y, a.z - b.z]);
+  }
+
+  static toFloat32Array(v: Vector3): Float32Array {
+    return new Float32Array(v.elements);
   }
 
   static unitX(): Vector3 {
