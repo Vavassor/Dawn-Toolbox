@@ -63,12 +63,22 @@ interface Camera {
   yaw: number;
 }
 
+interface DirectionalLight {
+  direction: Vector3;
+  radiance: Vector3;
+}
+
 export type HandleMouseMove = (event: MouseEvent) => void;
 
 interface PipelineSet {
   line: Pipeline;
   surface: Pipeline;
   test: Pipeline;
+}
+
+interface PointLight {
+  position: Point3;
+  radiance: Vector3;
 }
 
 interface ShaderProgramSet {
@@ -281,7 +291,15 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
       pixel: litPixelShader,
       vertex: litVertexShader,
     },
-    uniforms: ["light_direction", "model_view_projection", "normal_transform"],
+    uniforms: [
+      "directional_light.direction",
+      "directional_light.radiance",
+      "model",
+      "model_view_projection",
+      "normal_transform",
+      "point_light.position",
+      "point_light.radiance",
+    ],
     vertexLayout: {
       attributes: [
         { name: "vertex_position" },
@@ -362,6 +380,14 @@ export const updateFrame = (app: App) => {
     Matrix4.transpose(Matrix4.inverse(modelView))
   );
   const lightDirection = new Vector3([-0.5345, -0.8018, -0.2673]);
+  const directionalLight: DirectionalLight = {
+    direction: Vector3.negate(Matrix4.transformVector3(view, lightDirection)),
+    radiance: new Vector3([1, 1, 1]),
+  };
+  const pointLight: PointLight = {
+    position: new Point3([1, -1, 1]),
+    radiance: new Vector3([1, 1, 1]),
+  };
 
   setUniformMatrix4fv(
     context,
@@ -380,10 +406,32 @@ export const updateFrame = (app: App) => {
   setUniform3fv(
     context,
     programs.lit,
-    "light_direction",
-    Vector3.toFloat32Array(
-      Vector3.negate(Matrix4.transformVector3(view, lightDirection))
-    )
+    "directional_light.direction",
+    Vector3.toFloat32Array(directionalLight.direction)
+  );
+  setUniform3fv(
+    context,
+    programs.lit,
+    "directional_light.radiance",
+    Vector3.toFloat32Array(directionalLight.radiance)
+  );
+  setUniform3fv(
+    context,
+    programs.lit,
+    "point_light.position",
+    Point3.toFloat32Array(pointLight.position)
+  );
+  setUniform3fv(
+    context,
+    programs.lit,
+    "point_light.radiance",
+    Vector3.toFloat32Array(pointLight.radiance)
+  );
+  setUniformMatrix4fv(
+    context,
+    programs.lit,
+    "model",
+    Matrix4.toFloat32Array(Matrix4.transpose(model))
   );
   setUniformMatrix4fv(
     context,

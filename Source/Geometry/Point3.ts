@@ -47,6 +47,10 @@ export class Point3 {
     return new Vector3([a.x - b.x, a.y - b.y, a.z - b.z]);
   }
 
+  static toFloat32Array(point: Point3): Float32Array {
+    return new Float32Array(point.elements);
+  }
+
   static zero(): Point3 {
     return new Point3([0, 0, 0]);
   }
