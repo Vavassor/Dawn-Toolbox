@@ -4,7 +4,6 @@ attribute vec3 vertex_position;
 
 uniform mat4 model;
 uniform mat4 model_view_projection;
-uniform mat3 normal_transform;
 
 varying vec4 surface_color;
 varying vec3 surface_normal;
@@ -15,6 +14,6 @@ void main()
     vec4 homogenous_position = vec4(vertex_position, 1.0);
     gl_Position = model_view_projection * homogenous_position;
     surface_color = vertex_color;
-    surface_normal = normalize(normal_transform * vertex_normal.xyz);
+    surface_normal = normalize(mat3(model) * vertex_normal.xyz);
     surface_position = vec3(model * homogenous_position);
 }
