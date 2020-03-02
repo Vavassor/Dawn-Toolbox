@@ -9,6 +9,7 @@ import {
   Sphere,
   getIndexCount,
   getVertexCount,
+  Cuboid,
 } from "./Primitive";
 import { Vector3 } from "./Geometry/Vector3";
 import { packSByte4FromVector4 } from "./Packing";
@@ -32,6 +33,85 @@ interface Batch {
 export const drawPrimitives = (app: App) => {
   drawLines(app);
   drawSurfaces(app);
+};
+
+const batchCuboidIndices = (indexBuffer: ArrayBuffer, baseIndex: number) => {
+  const uint16View = new Uint16Array(indexBuffer);
+
+  const verticesPerFace = 4;
+  const faceCount = 6;
+  const setByFace = [0, 1, 1, 0, 0, 1];
+  const cornerIndicesBySet = [
+    [0, 2, 1, 1, 2, 3],
+    [0, 1, 2, 1, 3, 2],
+  ];
+  for (let i = 0; i < faceCount; i++) {
+    const cornerIndices = cornerIndicesBySet[setByFace[i]];
+    for (let j = 0; j < cornerIndices.length; j++) {
+      uint16View[faceCount * i + j] =
+        verticesPerFace * i + cornerIndices[j] + baseIndex;
+    }
+  }
+};
+
+const batchCuboidVertices = (vertexBuffer: ArrayBuffer, cuboid: Cuboid) => {
+  const { center, size, style } = cuboid;
+  const extents = Vector3.divide(Vector3.fromSize3(size), 2);
+
+  const componentCount = 5;
+  const floatView = new Float32Array(vertexBuffer);
+  const uint32View = new Uint32Array(vertexBuffer);
+  const color = Color.toRgbaInteger(style.color);
+
+  const cornerSigns = [
+    new Vector3([-1, -1, -1]),
+    new Vector3([-1, -1, 1]),
+    new Vector3([-1, 1, -1]),
+    new Vector3([-1, 1, 1]),
+    new Vector3([1, -1, -1]),
+    new Vector3([1, -1, 1]),
+    new Vector3([1, 1, -1]),
+    new Vector3([1, 1, 1]),
+  ];
+
+  const corners = cornerSigns.map(sign =>
+    Point3.add(center, Vector3.pointwiseMultiply(sign, extents))
+  );
+
+  const cornerIndicesByFace = [
+    [4, 5, 6, 7],
+    [0, 1, 2, 3],
+    [2, 3, 6, 7],
+    [0, 1, 4, 5],
+    [1, 3, 5, 7],
+    [0, 2, 4, 6],
+  ];
+
+  const faceNormals = [
+    new Vector3([1, 0, 0]),
+    new Vector3([-1, 0, 0]),
+    new Vector3([0, 1, 0]),
+    new Vector3([0, -1, 0]),
+    new Vector3([0, 0, 1]),
+    new Vector3([0, 0, -1]),
+  ];
+
+  for (let faceIndex = 0; faceIndex < 6; faceIndex++) {
+    const cornerIndices = cornerIndicesByFace[faceIndex];
+    const normal = faceNormals[faceIndex];
+    for (let cornerIndex = 0; cornerIndex < 4; cornerIndex++) {
+      const position = corners[cornerIndices[cornerIndex]];
+      const vertexIndex = componentCount * (4 * faceIndex + cornerIndex);
+      batchLitVertex(
+        floatView,
+        uint32View,
+        vertexIndex,
+        position,
+        normal,
+        color
+      );
+    }
+  }
 };
 
 const batchLineSegment = (
@@ -312,7 +392,7 @@ const drawSurfaces = (app: App) => {
   const batch = createBatch(buffers.primitiveVertex, buffers.primitiveIndex);
 
   const surfacePrimitives = primitiveContext.primitives.filter(
-    primitive => primitive.type === "SPHERE"
+    primitive => primitive.type === "CUBOID" || primitive.type === "SPHERE"
   );
 
   setPipeline(context, pipelines.surface);
@@ -331,6 +411,10 @@ const drawSurfaces = (app: App) => {
     const vertexBuffer = new ArrayBuffer(vertexByteCount);
 
     switch (primitive.type) {
+      case "CUBOID":
+        batchCuboidVertices(vertexBuffer, primitive);
+        batchCuboidIndices(indexBuffer, batch.vertex.count);
+        break;
       case "SPHERE":
         batchSphereVertices(vertexBuffer, primitive);
         batchSphereIndices(indexBuffer, batch.vertex.count);

@@ -34,6 +34,7 @@ import {
   PrimitiveContext,
   resetPrimitives,
   addSphere,
+  addCuboid,
 } from "./Primitive";
 import { COLORS } from "./Colors";
 import { drawPrimitives, PRIMITIVE_BATCH_CAP_IN_BYTES } from "./PrimitiveDraw";
@@ -343,6 +344,16 @@ export const updateFrame = (app: App) => {
   addSphere(primitiveContext, {
     center: new Point3([-2, 2, -1]),
     radius: 1,
+    style: { color: COLORS.white },
+  });
+  addCuboid(primitiveContext, {
+    center: new Point3([2, -2, -1]),
+    size: {width: 1, height: 0.5, depth: 2},
+    style: { color: COLORS.white },
+  });
+  addCuboid(primitiveContext, {
+    center: new Point3([2, -2, 1]),
+    size: {width: 1, height: 1, depth: 1},
     style: { color: COLORS.white },
   });
 

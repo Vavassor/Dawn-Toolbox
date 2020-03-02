@@ -1,5 +1,19 @@
 import { Color } from "./Color";
 import { Point3 } from "./Geometry/Point3";
+import { Size3 } from "./Size3";
+
+export interface Cuboid {
+  center: Point3;
+  size: Size3;
+  style: SurfaceStyle;
+  type: "CUBOID";
+}
+
+export interface CuboidSpec {
+  center: Point3;
+  size: Size3;
+  style: SurfaceStyle;
+}
 
 export interface LineSegment {
   endpoints: [Point3, Point3];
@@ -16,7 +30,7 @@ export interface LineStyle {
   color: Color;
 }
 
-export type Primitive = LineSegment | Sphere;
+export type Primitive = Cuboid | LineSegment | Sphere;
 
 export interface PrimitiveContext {
   primitives: Primitive[];
@@ -38,6 +52,17 @@ export interface SphereSpec {
 export interface SurfaceStyle {
   color: Color;
 }
+
+export const addCuboid = (context: PrimitiveContext, spec: CuboidSpec) => {
+  const { center, size, style } = spec;
+  const cuboid: Cuboid = {
+    center,
+    size,
+    style,
+    type: "CUBOID",
+  };
+  context.primitives.push(cuboid);
+};
 
 export const addLineSegment = (
   context: PrimitiveContext,
@@ -71,6 +96,11 @@ export const createPrimitiveContext = (): PrimitiveContext => {
 
 export const getIndexCount = (primitive: Primitive) => {
   switch (primitive.type) {
+    case "CUBOID": {
+      const sideCount = 6;
+      const indicesPerSide = 6;
+      return indicesPerSide * sideCount;
+    }
     case "LINE_SEGMENT":
       return 2;
     case "SPHERE": {
@@ -84,6 +114,11 @@ export const getIndexCount = (primitive: Primitive) => {
 
 export const getVertexCount = (primitive: Primitive) => {
   switch (primitive.type) {
+    case "CUBOID": {
+      const sideCount = 6;
+      const verticesPerSide = 4;
+      return verticesPerSide * sideCount;
+    }
     case "LINE_SEGMENT":
       return 2;
     case "SPHERE": {
