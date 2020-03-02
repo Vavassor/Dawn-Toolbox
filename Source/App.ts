@@ -342,8 +342,8 @@ export const updateFrame = (app: App) => {
     style: { color: COLORS.white },
   });
   addSphere(primitiveContext, {
-    center: new Point3([-2, 2, -1]),
-    radius: 1,
+    center: new Point3([-2, 2, 0]),
+    radius: 0.5,
     style: { color: COLORS.white },
   });
   addCuboid(primitiveContext, {
@@ -354,6 +354,11 @@ export const updateFrame = (app: App) => {
   addCuboid(primitiveContext, {
     center: new Point3([2, -2, 1]),
     size: {width: 1, height: 1, depth: 1},
+    style: { color: COLORS.white },
+  });
+  addCuboid(primitiveContext, {
+    center: new Point3([0, 0, -0.5]),
+    size: {width: 10, height: 0.1, depth: 10},
     style: { color: COLORS.white },
   });
 

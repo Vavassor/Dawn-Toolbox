@@ -48,7 +48,7 @@ const batchCuboidIndices = (indexBuffer: ArrayBuffer, baseIndex: number) => {
   for (let i = 0; i < faceCount; i++) {
     const cornerIndices = cornerIndicesBySet[setByFace[i]];
     for (let j = 0; j < cornerIndices.length; j++) {
-      uint16View[faceCount * i + j] =
+      uint16View[cornerIndices.length * i + j] =
         verticesPerFace * i + cornerIndices[j] + baseIndex;
     }
   }
