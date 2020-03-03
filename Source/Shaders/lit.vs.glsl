@@ -14,6 +14,6 @@ void main()
     vec4 homogenous_position = vec4(vertex_position, 1.0);
     gl_Position = model_view_projection * homogenous_position;
     surface_color = vertex_color;
-    surface_normal = normalize(mat3(model) * vertex_normal.xyz);
+    surface_normal = vec3(model * vec4(vertex_normal.xyz, 1.0));
     surface_position = vec3(model * homogenous_position);
 }

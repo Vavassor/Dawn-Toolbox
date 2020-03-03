@@ -394,7 +394,7 @@ export const updateFrame = (app: App) => {
   const modelViewProjection = Matrix4.multiply(projection, modelView);
   const lightDirection = new Vector3([-0.5345, -0.8018, -0.2673]);
   const directionalLight: DirectionalLight = {
-    direction: Vector3.negate(Matrix4.transformVector3(view, lightDirection)),
+    direction: lightDirection,
     radiance: new Vector3([1, 1, 1]),
   };
   const pointLight: PointLight = {
