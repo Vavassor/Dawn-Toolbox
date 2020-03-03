@@ -34,6 +34,7 @@ import {
   PrimitiveContext,
   resetPrimitives,
   addSphere,
+  addCuboid,
 } from "./Primitive";
 import { COLORS } from "./Colors";
 import { drawPrimitives, PRIMITIVE_BATCH_CAP_IN_BYTES } from "./PrimitiveDraw";
@@ -63,12 +64,22 @@ interface Camera {
   yaw: number;
 }
 
+interface DirectionalLight {
+  direction: Vector3;
+  radiance: Vector3;
+}
+
 export type HandleMouseMove = (event: MouseEvent) => void;
 
 interface PipelineSet {
   line: Pipeline;
   surface: Pipeline;
   test: Pipeline;
+}
+
+interface PointLight {
+  position: Point3;
+  radiance: Vector3;
 }
 
 interface ShaderProgramSet {
@@ -281,7 +292,15 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
       pixel: litPixelShader,
       vertex: litVertexShader,
     },
-    uniforms: ["light_direction", "model_view_projection", "normal_transform"],
+    uniforms: [
+      "directional_light.direction",
+      "directional_light.radiance",
+      "model",
+      "model_view_projection",
+      "point_light.position",
+      "point_light.radiance",
+      "view_position",
+    ],
     vertexLayout: {
       attributes: [
         { name: "vertex_position" },
@@ -323,8 +342,23 @@ export const updateFrame = (app: App) => {
     style: { color: COLORS.white },
   });
   addSphere(primitiveContext, {
-    center: new Point3([-2, 2, -1]),
-    radius: 1,
+    center: new Point3([-2, 2, 0]),
+    radius: 0.5,
+    style: { color: COLORS.white },
+  });
+  addCuboid(primitiveContext, {
+    center: new Point3([2, -2, -1]),
+    size: { width: 1, height: 0.5, depth: 2 },
+    style: { color: COLORS.white },
+  });
+  addCuboid(primitiveContext, {
+    center: new Point3([2, -2, 1]),
+    size: { width: 1, height: 1, depth: 1 },
+    style: { color: COLORS.white },
+  });
+  addCuboid(primitiveContext, {
+    center: new Point3([0, 0, -0.5]),
+    size: { width: 10, height: 0.1, depth: 10 },
     style: { color: COLORS.white },
   });
 
@@ -358,10 +392,15 @@ export const updateFrame = (app: App) => {
   );
   const modelView = Matrix4.multiply(view, model);
   const modelViewProjection = Matrix4.multiply(projection, modelView);
-  const normalTransform = Matrix3.fromMatrix4(
-    Matrix4.transpose(Matrix4.inverse(modelView))
-  );
   const lightDirection = new Vector3([-0.5345, -0.8018, -0.2673]);
+  const directionalLight: DirectionalLight = {
+    direction: lightDirection,
+    radiance: new Vector3([1, 1, 1]),
+  };
+  const pointLight: PointLight = {
+    position: new Point3([1, -1, 1]),
+    radiance: new Vector3([1, 1, 1]),
+  };
 
   setUniformMatrix4fv(
     context,
@@ -380,10 +419,32 @@ export const updateFrame = (app: App) => {
   setUniform3fv(
     context,
     programs.lit,
-    "light_direction",
-    Vector3.toFloat32Array(
-      Vector3.negate(Matrix4.transformVector3(view, lightDirection))
-    )
+    "directional_light.direction",
+    Vector3.toFloat32Array(directionalLight.direction)
+  );
+  setUniform3fv(
+    context,
+    programs.lit,
+    "directional_light.radiance",
+    Vector3.toFloat32Array(directionalLight.radiance)
+  );
+  setUniform3fv(
+    context,
+    programs.lit,
+    "point_light.position",
+    Point3.toFloat32Array(pointLight.position)
+  );
+  setUniform3fv(
+    context,
+    programs.lit,
+    "point_light.radiance",
+    Vector3.toFloat32Array(pointLight.radiance)
+  );
+  setUniformMatrix4fv(
+    context,
+    programs.lit,
+    "model",
+    Matrix4.toFloat32Array(Matrix4.transpose(model))
   );
   setUniformMatrix4fv(
     context,
@@ -391,11 +452,11 @@ export const updateFrame = (app: App) => {
     "model_view_projection",
     Matrix4.toFloat32Array(Matrix4.transpose(modelViewProjection))
   );
-  setUniformMatrix3fv(
+  setUniform3fv(
     context,
     programs.lit,
-    "normal_transform",
-    Matrix3.toFloat32Array(Matrix3.transpose(normalTransform))
+    "view_position",
+    Point3.toFloat32Array(camera.position)
   );
 
   drawPrimitives(app);

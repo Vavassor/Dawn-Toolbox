@@ -1,6 +1,7 @@
 import { Point3 } from "./Point3";
 import { Vector2 } from "./Vector2";
 import { Vector4 } from "./Vector4";
+import { Size3 } from "../Size3";
 
 export class Vector3 {
   elements: number[];
@@ -70,6 +71,10 @@ export class Vector3 {
 
   static fromPoint3(point: Point3): Vector3 {
     return new Vector3([point.x, point.y, point.z]);
+  }
+
+  static fromSize3(size: Size3): Vector3 {
+    return new Vector3([size.width, size.depth, size.height]);
   }
 
   static fromSphericalCoordinates(
