@@ -34,6 +34,10 @@ export class Rotor3 {
     return new Rotor3(scalar, bivector);
   }
 
+  static identity(): Rotor3 {
+    return new Rotor3(1, new Bivector3([0, 0, 0]));
+  }
+
   static multiply(s: Rotor3, t: Rotor3): Rotor3 {
     const scalar =
       s.a * t.a - s.b.xy * t.b.xy - s.b.xz * t.b.xz - s.b.yz * t.b.yz;

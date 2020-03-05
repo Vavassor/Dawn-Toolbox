@@ -1,9 +1,11 @@
 import { Color } from "./Color";
 import { Point3 } from "./Geometry/Point3";
 import { Size3 } from "./Size3";
+import { Rotor3 } from "./Geometry/Rotor3";
 
 export interface Cuboid {
   center: Point3;
+  orientation: Rotor3;
   size: Size3;
   style: SurfaceStyle;
   type: "CUBOID";
@@ -11,6 +13,7 @@ export interface Cuboid {
 
 export interface CuboidSpec {
   center: Point3;
+  orientation?: Rotor3;
   size: Size3;
   style: SurfaceStyle;
 }
@@ -54,9 +57,10 @@ export interface SurfaceStyle {
 }
 
 export const addCuboid = (context: PrimitiveContext, spec: CuboidSpec) => {
-  const { center, size, style } = spec;
+  const { center, orientation, size, style } = spec;
   const cuboid: Cuboid = {
     center,
+    orientation: orientation || Rotor3.identity(),
     size,
     style,
     type: "CUBOID",
