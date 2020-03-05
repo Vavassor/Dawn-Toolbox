@@ -39,6 +39,8 @@ import {
 import { COLORS } from "./Colors";
 import { drawPrimitives, PRIMITIVE_BATCH_CAP_IN_BYTES } from "./PrimitiveDraw";
 import { Matrix3 } from "./Geometry/Matrix3";
+import { Rotor3 } from "./Geometry/Rotor3";
+import { Bivector3 } from "./Geometry/Bivector3";
 
 export interface App {
   buffers: BufferSet;
@@ -347,7 +349,8 @@ export const updateFrame = (app: App) => {
     style: { color: COLORS.white },
   });
   addCuboid(primitiveContext, {
-    center: new Point3([2, -2, -1]),
+    center: new Point3([0, -3, 0.5]),
+    orientation: Rotor3.fromAngleAndPlane(Math.PI / 3, Bivector3.unitXZ()),
     size: { width: 1, height: 0.5, depth: 2 },
     style: { color: COLORS.white },
   });

@@ -71,4 +71,16 @@ export class Bivector3 {
   static subtract(a: Bivector3, b: Bivector3): Bivector3 {
     return new Bivector3([a.xy - b.xy, a.xz - b.xz, a.yz - b.yz]);
   }
+
+  static unitXY(): Bivector3 {
+    return new Bivector3([1, 0, 0]);
+  }
+
+  static unitXZ(): Bivector3 {
+    return new Bivector3([0, 1, 0]);
+  }
+
+  static unitYZ(): Bivector3 {
+    return new Bivector3([0, 0, 1]);
+  }
 }

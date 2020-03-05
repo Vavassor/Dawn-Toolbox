@@ -14,6 +14,7 @@ import {
 import { Vector3 } from "./Geometry/Vector3";
 import { packSByte4FromVector4 } from "./Packing";
 import { Vector4 } from "./Geometry/Vector4";
+import { rotate } from "./Geometry/GeometricAlgebra";
 
 export const PRIMITIVE_BATCH_CAP_IN_BYTES = 16384;
 
@@ -55,7 +56,7 @@ const batchCuboidIndices = (indexBuffer: ArrayBuffer, baseIndex: number) => {
 };
 
 const batchCuboidVertices = (vertexBuffer: ArrayBuffer, cuboid: Cuboid) => {
-  const { center, size, style } = cuboid;
+  const { center, orientation, size, style } = cuboid;
   const extents = Vector3.divide(Vector3.fromSize3(size), 2);
 
   const componentCount = 5;
@@ -75,7 +76,7 @@ const batchCuboidVertices = (vertexBuffer: ArrayBuffer, cuboid: Cuboid) => {
   ];
 
   const corners = cornerSigns.map(sign =>
-    Point3.add(center, Vector3.pointwiseMultiply(sign, extents))
+    Vector3.pointwiseMultiply(sign, extents)
   );
 
   const cornerIndicesByFace = [
@@ -98,9 +99,11 @@ const batchCuboidVertices = (vertexBuffer: ArrayBuffer, cuboid: Cuboid) => {
 
   for (let faceIndex = 0; faceIndex < 6; faceIndex++) {
     const cornerIndices = cornerIndicesByFace[faceIndex];
-    const normal = faceNormals[faceIndex];
+    const faceNormal = faceNormals[faceIndex];
+    const normal = Vector3.normalize(rotate(orientation, faceNormal));
     for (let cornerIndex = 0; cornerIndex < 4; cornerIndex++) {
-      const position = corners[cornerIndices[cornerIndex]];
+      const corner = corners[cornerIndices[cornerIndex]];
+      const position = Point3.add(center, rotate(orientation, corner));
       const vertexIndex = componentCount * (4 * faceIndex + cornerIndex);
       batchLitVertex(
         floatView,
