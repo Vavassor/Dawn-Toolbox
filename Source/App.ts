@@ -7,7 +7,6 @@ import {
   createShaderProgram,
   ShaderProgram,
   setUniformMatrix4fv,
-  setUniformMatrix3fv,
   setUniform3fv,
 } from "./WebGL/ShaderProgram";
 import basicPixelSource from "./Shaders/basic.ps.glsl";
@@ -27,6 +26,10 @@ import {
   KeyMapping,
   updateInput,
   getAxis2d,
+  Action,
+  Axis2dDirection,
+  KeyMappingType,
+  KeyboardEventKey,
 } from "./Input";
 import {
   addLineSegment,
@@ -38,7 +41,6 @@ import {
 } from "./Primitive";
 import { COLORS } from "./Colors";
 import { drawPrimitives, PRIMITIVE_BATCH_CAP_IN_BYTES } from "./PrimitiveDraw";
-import { Matrix3 } from "./Geometry/Matrix3";
 import { Rotor3 } from "./Geometry/Rotor3";
 import { Bivector3 } from "./Geometry/Bivector3";
 
@@ -162,28 +164,28 @@ const createBufferSet = (context: GloContext): BufferSet => {
 const createKeyMappings = (): KeyMapping[] => {
   return [
     {
-      action: "MOVE",
-      direction: "POSITIVE_Y",
-      key: "w",
-      type: "AXIS_2D",
+      action: Action.Move,
+      direction: Axis2dDirection.PositiveY,
+      key: KeyboardEventKey.W,
+      type: KeyMappingType.Axis2d,
     },
     {
-      action: "MOVE",
-      direction: "NEGATIVE_Y",
-      key: "s",
-      type: "AXIS_2D",
+      action: Action.Move,
+      direction: Axis2dDirection.NegativeY,
+      key: KeyboardEventKey.S,
+      type: KeyMappingType.Axis2d,
     },
     {
-      action: "MOVE",
-      direction: "POSITIVE_X",
-      key: "d",
-      type: "AXIS_2D",
+      action: Action.Move,
+      direction: Axis2dDirection.PositiveX,
+      key: KeyboardEventKey.D,
+      type: KeyMappingType.Axis2d,
     },
     {
-      action: "MOVE",
-      direction: "NEGATIVE_X",
-      key: "a",
-      type: "AXIS_2D",
+      action: Action.Move,
+      direction: Axis2dDirection.NegativeX,
+      key: KeyboardEventKey.A,
+      type: KeyMappingType.Axis2d,
     },
   ];
 };
@@ -495,7 +497,7 @@ const updateCamera = (camera: Camera, input: InputState) => {
   camera.yaw -= horizontalPixelsPerRadian * delta.x;
 
   const direction = Vector2.rotate(
-    getAxis2d(input, "MOVE"),
+    getAxis2d(input, Action.Move),
     camera.yaw + Math.PI / 2
   );
   const velocity = Vector2.multiply(moveSpeed, direction);
