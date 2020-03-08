@@ -3,6 +3,19 @@ import { Vector3 } from "./Geometry/Vector3";
 import { TraceError } from "./TraceError";
 import { Rotor3 } from "./Geometry/Rotor3";
 import { Bivector3 } from "./Geometry/Bivector3";
+import {
+  BinaryReader,
+  expect,
+  expectBytesLeft,
+  haveReachedEndOfFile,
+  readFloat32Array,
+  readString,
+  readUint16,
+  readUint16Array,
+  readUint32,
+  readUint8,
+  skipBytes,
+} from "./BinaryReader";
 
 const FILE_HEADER_TAG = "DWNSCENE";
 const FILE_VERSION = 1;
@@ -77,13 +90,6 @@ enum ObjectType {
   Mesh,
 }
 
-interface Reader {
-  byteIndex: number;
-  dataView: DataView;
-  sourceData: ArrayBuffer;
-  textDecoder: TextDecoder;
-}
-
 interface Scene {
   meshes: Mesh[];
   rootTransformNode: TransformNode | null;
@@ -125,7 +131,7 @@ interface VertexLayoutSpec {
 }
 
 export const deserialize = (sourceData: ArrayBuffer): Scene => {
-  const reader: Reader = {
+  const reader: BinaryReader = {
     byteIndex: 0,
     dataView: new DataView(sourceData),
     sourceData,
@@ -175,26 +181,6 @@ export const deserialize = (sourceData: ArrayBuffer): Scene => {
   };
 };
 
-const expect = (expectation: boolean, message: string) => {
-  if (!expectation) {
-    throw new Error(message);
-  }
-};
-
-const expectBytesLeft = (
-  reader: Reader,
-  byteCount: number,
-  message: string
-) => {
-  if (reader.byteIndex + byteCount > reader.sourceData.byteLength) {
-    throw new Error(message);
-  }
-};
-
-const haveReachedEndOfFile = (reader: Reader): boolean => {
-  return reader.byteIndex === reader.sourceData.byteLength;
-};
-
 const isComponentType = (type: number): boolean => {
   switch (type) {
     case ComponentType.Float1:
@@ -233,7 +219,7 @@ const isVertexAttributeType = (type: number): boolean => {
   }
 };
 
-const readAccessor = (reader: Reader): Accessor => {
+const readAccessor = (reader: BinaryReader): Accessor => {
   const byteCount = readUint32(reader);
   const byteIndex = readUint32(reader);
   const byteStride = readUint16(reader);
@@ -260,7 +246,7 @@ const readAccessor = (reader: Reader): Accessor => {
 };
 
 const readAccessorChunk = (
-  reader: Reader,
+  reader: BinaryReader,
   chunkHeader: ChunkHeader
 ): Accessor[] => {
   const bytesPerAccessor = 14;
@@ -277,7 +263,7 @@ const readAccessorChunk = (
   return accessors;
 };
 
-const readBuffer = (reader: Reader): ArrayBuffer => {
+const readBuffer = (reader: BinaryReader): ArrayBuffer => {
   const byteCount = readUint32(reader);
   const buffer = reader.sourceData.slice(
     reader.byteIndex,
@@ -287,7 +273,7 @@ const readBuffer = (reader: Reader): ArrayBuffer => {
   return buffer;
 };
 
-const readBufferChunk = (reader: Reader): ArrayBuffer[] => {
+const readBufferChunk = (reader: BinaryReader): ArrayBuffer[] => {
   const bufferCount = readUint16(reader);
 
   expect(bufferCount > 0, "Buffer count must be nonzero.");
@@ -301,7 +287,7 @@ const readBufferChunk = (reader: Reader): ArrayBuffer[] => {
   return buffers;
 };
 
-const readChunkHeader = (reader: Reader): ChunkHeader => {
+const readChunkHeader = (reader: BinaryReader): ChunkHeader => {
   try {
     const tag = readString(reader, 4);
     const byteCount = readUint32(reader);
@@ -315,26 +301,7 @@ const readChunkHeader = (reader: Reader): ChunkHeader => {
   }
 };
 
-const readFloat32Array = (reader: Reader, count: number): number[] => {
-  const bytesPerFloat32 = 4;
-
-  expectBytesLeft(
-    reader,
-    bytesPerFloat32 * count,
-    `Failed reading float32 array at byte index ${reader.byteIndex}.`
-  );
-
-  const values: number[] = [];
-  for (let i = 0; i < count; i++) {
-    const byteIndex = bytesPerFloat32 * i + reader.byteIndex;
-    const value = reader.dataView.getFloat32(byteIndex, true);
-    values.push(value);
-  }
-
-  return values;
-};
-
-const readFileHeader = (reader: Reader): FileHeader => {
+const readFileHeader = (reader: BinaryReader): FileHeader => {
   try {
     const tag = readString(reader, 8);
     const version = readUint32(reader);
@@ -359,7 +326,7 @@ const readFileHeader = (reader: Reader): FileHeader => {
 };
 
 const readMeshChunk = (
-  reader: Reader,
+  reader: BinaryReader,
   chunkHeader: ChunkHeader
 ): MeshSpec[] => {
   const bytesPerMesh = 12;
@@ -374,7 +341,7 @@ const readMeshChunk = (
   return meshes;
 };
 
-const readMeshSpec = (reader: Reader): MeshSpec => {
+const readMeshSpec = (reader: BinaryReader): MeshSpec => {
   const indexAccessorIndex = readUint16(reader);
   const materialIndex = readUint16(reader);
   const vertexLayoutIndex = readUint16(reader);
@@ -387,7 +354,7 @@ const readMeshSpec = (reader: Reader): MeshSpec => {
 };
 
 const readObjectChunk = (
-  reader: Reader,
+  reader: BinaryReader,
   chunkHeader: ChunkHeader
 ): ObjectSpec[] => {
   const bytesPerObject = 4;
@@ -404,7 +371,7 @@ const readObjectChunk = (
   return objectSpecs;
 };
 
-const readObjectSpec = (reader: Reader): ObjectSpec => {
+const readObjectSpec = (reader: BinaryReader): ObjectSpec => {
   const contentIndex = readUint16(reader);
   const type = readUint8(reader);
 
@@ -416,19 +383,7 @@ const readObjectSpec = (reader: Reader): ObjectSpec => {
   };
 };
 
-const readString = (reader: Reader, byteCount: number): string => {
-  expectBytesLeft(
-    reader,
-    byteCount,
-    `Failed reading string at byte index ${reader.byteIndex}.`
-  );
-  const start = reader.byteIndex;
-  const end = start + byteCount;
-  const uint8View = new Uint8Array(reader.sourceData.slice(start, end));
-  return reader.textDecoder.decode(uint8View);
-};
-
-const readTransformNodeChunk = (reader: Reader): TransformNodeSpec[] => {
+const readTransformNodeChunk = (reader: BinaryReader): TransformNodeSpec[] => {
   const transformNodeCount = readUint16(reader);
 
   expect(transformNodeCount > 0, "Transform node count must be nonzero.");
@@ -442,7 +397,7 @@ const readTransformNodeChunk = (reader: Reader): TransformNodeSpec[] => {
   return transformNodeSpecs;
 };
 
-const readTransformNodeSpec = (reader: Reader): TransformNodeSpec => {
+const readTransformNodeSpec = (reader: BinaryReader): TransformNodeSpec => {
   const orientationValues = readFloat32Array(reader, 4);
   const positionValues = readFloat32Array(reader, 3);
   const scaleValues = readFloat32Array(reader, 3);
@@ -466,63 +421,7 @@ const readTransformNodeSpec = (reader: Reader): TransformNodeSpec => {
   };
 };
 
-const readUint16 = (reader: Reader): number => {
-  const bytesPerUint16 = 2;
-  expectBytesLeft(
-    reader,
-    bytesPerUint16,
-    `Failed reading uint16 at byte index ${reader.byteIndex}.`
-  );
-  const value = reader.dataView.getUint16(reader.byteIndex, true);
-  reader.byteIndex += bytesPerUint16;
-  return value;
-};
-
-const readUint16Array = (reader: Reader, count: number): number[] => {
-  const bytesPerUint16 = 2;
-  const sizeInBytes = bytesPerUint16 * count;
-
-  expectBytesLeft(
-    reader,
-    sizeInBytes,
-    `Failed reading uint16 array at byte index ${reader.byteIndex}.`
-  );
-
-  const values: number[] = [];
-  for (let i = 0; i < count; i++) {
-    const byteIndex = bytesPerUint16 * i + reader.byteIndex;
-    const value = reader.dataView.getUint16(byteIndex, true);
-    values.push(value);
-  }
-  reader.byteIndex += sizeInBytes;
-
-  return values;
-};
-
-const readUint32 = (reader: Reader): number => {
-  const bytesPerUint32 = 4;
-  expectBytesLeft(
-    reader,
-    bytesPerUint32,
-    `Failed reading uint32 at byte index ${reader.byteIndex}.`
-  );
-  const value = reader.dataView.getUint32(reader.byteIndex, true);
-  reader.byteIndex += bytesPerUint32;
-  return value;
-};
-
-const readUint8 = (reader: Reader): number => {
-  expectBytesLeft(
-    reader,
-    1,
-    `Failed reading uint8 at byte index ${reader.byteIndex}.`
-  );
-  const value = reader.dataView.getUint8(reader.byteIndex);
-  reader.byteIndex++;
-  return value;
-};
-
-const readVertexAttributeSpec = (reader: Reader): VertexAttributeSpec => {
+const readVertexAttributeSpec = (reader: BinaryReader): VertexAttributeSpec => {
   const accessorIndex = readUint16(reader);
   const type = readUint8(reader);
 
@@ -537,7 +436,7 @@ const readVertexAttributeSpec = (reader: Reader): VertexAttributeSpec => {
   };
 };
 
-const readVertexLayoutChunk = (reader: Reader): VertexLayoutSpec[] => {
+const readVertexLayoutChunk = (reader: BinaryReader): VertexLayoutSpec[] => {
   const vertexLayoutCount = readUint16(reader);
 
   expect(vertexLayoutCount > 0, "Vertex layout count must be nonzero.");
@@ -551,7 +450,7 @@ const readVertexLayoutChunk = (reader: Reader): VertexLayoutSpec[] => {
   return vertexLayouts;
 };
 
-const readVertexLayoutSpec = (reader: Reader): VertexLayoutSpec => {
+const readVertexLayoutSpec = (reader: BinaryReader): VertexLayoutSpec => {
   const vertexAttributeCount = readUint16(reader);
 
   expect(vertexAttributeCount > 0, "Vertex attribute count must be nonzero.");
@@ -565,13 +464,4 @@ const readVertexLayoutSpec = (reader: Reader): VertexLayoutSpec => {
   return {
     vertexAttributes,
   };
-};
-
-const skipBytes = (reader: Reader, byteCount: number) => {
-  expectBytesLeft(
-    reader,
-    byteCount,
-    `Failed skipping ${byteCount} bytes at byte index ${reader.byteIndex}.`
-  );
-  reader.byteIndex += byteCount;
 };
