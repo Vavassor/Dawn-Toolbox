@@ -1,9 +1,20 @@
+import { times } from "./Array";
+
 export interface BinaryReader {
   byteIndex: number;
   dataView: DataView;
   sourceData: ArrayBuffer;
   textDecoder: TextDecoder;
 }
+
+export const createBinaryReader = (sourceData: ArrayBuffer): BinaryReader => {
+  return {
+    byteIndex: 0,
+    dataView: new DataView(sourceData),
+    sourceData,
+    textDecoder: new TextDecoder("utf-8"),
+  };
+};
 
 export const expect = (expectation: boolean, message: string) => {
   if (!expectation) {
@@ -21,6 +32,16 @@ export const expectBytesLeft = (
   }
 };
 
+export function expectIndexInBounds<T>(
+  index: number,
+  array: T[],
+  message: string
+) {
+  if (index < 0 || index >= array.length) {
+    throw new Error(message);
+  }
+}
+
 export const haveReachedEndOfFile = (reader: BinaryReader): boolean => {
   return reader.byteIndex === reader.sourceData.byteLength;
 };
@@ -37,12 +58,10 @@ export const readFloat32Array = (
     `Failed reading float32 array at byte index ${reader.byteIndex}.`
   );
 
-  const values: number[] = [];
-  for (let i = 0; i < count; i++) {
-    const byteIndex = bytesPerFloat32 * i + reader.byteIndex;
-    const value = reader.dataView.getFloat32(byteIndex, true);
-    values.push(value);
-  }
+  const values = times(count, index => {
+    const byteIndex = bytesPerFloat32 * index + reader.byteIndex;
+    return reader.dataView.getFloat32(byteIndex, true);
+  });
 
   return values;
 };
@@ -84,12 +103,11 @@ export const readUint16Array = (
     `Failed reading uint16 array at byte index ${reader.byteIndex}.`
   );
 
-  const values: number[] = [];
-  for (let i = 0; i < count; i++) {
-    const byteIndex = bytesPerUint16 * i + reader.byteIndex;
-    const value = reader.dataView.getUint16(byteIndex, true);
-    values.push(value);
-  }
+  const values = times(count, index => {
+    const byteIndex = bytesPerUint16 * index + reader.byteIndex;
+    return reader.dataView.getUint16(byteIndex, true);
+  });
+
   reader.byteIndex += sizeInBytes;
 
   return values;

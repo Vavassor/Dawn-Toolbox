@@ -15,12 +15,24 @@ import {
   readUint32,
   readUint8,
   skipBytes,
+  expectIndexInBounds,
+  createBinaryReader,
 } from "./BinaryReader";
+import { times } from "./Array";
 
 const FILE_HEADER_TAG = "DWNSCENE";
 const FILE_VERSION = 1;
 
 interface Accessor {
+  buffer: ArrayBuffer;
+  byteCount: number;
+  byteIndex: number;
+  byteStride: number;
+  componentCount: number;
+  componentType: ComponentType;
+}
+
+interface AccessorSpec {
   bufferIndex: number;
   byteCount: number;
   byteIndex: number;
@@ -64,7 +76,8 @@ interface FileHeader {
 }
 
 interface Mesh {
-  indicies: number[];
+  indexAccessor: Accessor;
+  vertexLayout: VertexLayout;
 }
 
 interface MeshObject {
@@ -91,6 +104,7 @@ enum ObjectType {
 }
 
 interface Scene {
+  buffers: ArrayBuffer[];
   meshes: Mesh[];
   rootTransformNode: TransformNode | null;
   transformNodes: TransformNode[];
@@ -114,6 +128,11 @@ interface TransformNodeSpec {
   transform: Transform;
 }
 
+interface VertexAttribute {
+  accessor: Accessor;
+  type: VertexAttributeType;
+}
+
 interface VertexAttributeSpec {
   accessorIndex: number;
   type: VertexAttributeType;
@@ -126,21 +145,20 @@ enum VertexAttributeType {
   Texcoord,
 }
 
+interface VertexLayout {
+  vertexAttributes: VertexAttribute[];
+}
+
 interface VertexLayoutSpec {
   vertexAttributes: VertexAttributeSpec[];
 }
 
 export const deserialize = (sourceData: ArrayBuffer): Scene => {
-  const reader: BinaryReader = {
-    byteIndex: 0,
-    dataView: new DataView(sourceData),
-    sourceData,
-    textDecoder: new TextDecoder("utf-8"),
-  };
+  const reader = createBinaryReader(sourceData);
 
   readFileHeader(reader);
 
-  let accessors: Accessor[] = [];
+  let accessorSpecs: AccessorSpec[] = [];
   let buffers: ArrayBuffer[] = [];
   let meshSpecs: MeshSpec[] = [];
   let objectSpecs: ObjectSpec[] = [];
@@ -151,7 +169,7 @@ export const deserialize = (sourceData: ArrayBuffer): Scene => {
     const chunkHeader = readChunkHeader(reader);
     switch (chunkHeader.tag) {
       case ChunkType.Accessor:
-        accessors = readAccessorChunk(reader, chunkHeader);
+        accessorSpecs = readAccessorChunk(reader, chunkHeader);
         break;
       case ChunkType.Buffer:
         buffers = readBufferChunk(reader);
@@ -174,10 +192,145 @@ export const deserialize = (sourceData: ArrayBuffer): Scene => {
     }
   }
 
+  const accessors = accessorSpecs.map(spec => createAccessor(spec, buffers));
+  const vertexLayouts = vertexLayoutSpecs.map(spec =>
+    createVertexLayout(spec, accessors)
+  );
+  const meshes = meshSpecs.map(spec =>
+    createMesh(spec, vertexLayouts, accessors)
+  );
+  const objects = objectSpecs.map(spec => createObject(spec, meshes));
+  const transformNodes = transformNodeSpecs.map(spec =>
+    createTransformNodeWithoutChildren(spec, objects)
+  );
+  resolveTransformNodeConnections(transformNodeSpecs, transformNodes);
+
   return {
-    meshes: [],
-    rootTransformNode: null,
-    transformNodes: [],
+    buffers,
+    meshes,
+    rootTransformNode: transformNodes[0],
+    transformNodes,
+  };
+};
+
+const createAccessor = (
+  spec: AccessorSpec,
+  buffers: ArrayBuffer[]
+): Accessor => {
+  const {
+    bufferIndex,
+    byteCount,
+    byteIndex,
+    byteStride,
+    componentCount,
+    componentType,
+  } = spec;
+
+  expectIndexInBounds(bufferIndex, buffers, "Buffer index is out of bounds.");
+
+  const buffer = buffers[bufferIndex];
+
+  return {
+    buffer,
+    byteCount,
+    byteIndex,
+    byteStride,
+    componentCount,
+    componentType,
+  };
+};
+
+const createMesh = (
+  spec: MeshSpec,
+  vertexLayouts: VertexLayout[],
+  accessors: Accessor[]
+): Mesh => {
+  const { indexAccessorIndex, vertexLayoutIndex } = spec;
+
+  expectIndexInBounds(
+    indexAccessorIndex,
+    accessors,
+    "Index accessor index is out of bounds."
+  );
+  expectIndexInBounds(
+    vertexLayoutIndex,
+    vertexLayouts,
+    "Vertex layout index is out of bounds."
+  );
+
+  const indexAccessor = accessors[indexAccessorIndex];
+  const vertexLayout = vertexLayouts[vertexLayoutIndex];
+
+  return {
+    indexAccessor,
+    vertexLayout,
+  };
+};
+
+const createObject = (spec: ObjectSpec, meshes: Mesh[]): Object => {
+  const { contentIndex, type } = spec;
+
+  switch (type) {
+    case ObjectType.Mesh: {
+      expectIndexInBounds(contentIndex, meshes, "Mesh index is out of bounds.");
+      const mesh = meshes[contentIndex];
+      return {
+        mesh,
+        type,
+      };
+    }
+    default:
+      throw new Error("Object type is invalid.");
+  }
+};
+
+const createTransformNodeWithoutChildren = (
+  spec: TransformNodeSpec,
+  objects: Object[]
+): TransformNode => {
+  const { objectIndex, transform } = spec;
+
+  expectIndexInBounds(objectIndex, objects, "Object index is out of bounds.");
+
+  const object = objects[objectIndex];
+
+  return {
+    children: [],
+    object,
+    transform,
+  };
+};
+
+const createVertexAttribute = (
+  spec: VertexAttributeSpec,
+  accessors: Accessor[]
+): VertexAttribute => {
+  const { accessorIndex, type } = spec;
+
+  expectIndexInBounds(
+    accessorIndex,
+    accessors,
+    "Accessor index is out of bounds."
+  );
+
+  const accessor = accessors[accessorIndex];
+
+  return {
+    accessor,
+    type,
+  };
+};
+
+const createVertexLayout = (
+  spec: VertexLayoutSpec,
+  accessors: Accessor[]
+): VertexLayout => {
+  const vertexAttributes = spec.vertexAttributes.map(vertexAttributeSpec =>
+    createVertexAttribute(vertexAttributeSpec, accessors)
+  );
+
+  return {
+    vertexAttributes,
   };
 };
 
@@ -219,7 +372,7 @@ const isVertexAttributeType = (type: number): boolean => {
   }
 };
 
-const readAccessor = (reader: BinaryReader): Accessor => {
+const readAccessorSpec = (reader: BinaryReader): AccessorSpec => {
   const byteCount = readUint32(reader);
   const byteIndex = readUint32(reader);
   const byteStride = readUint16(reader);
@@ -248,15 +401,15 @@ const readAccessor = (reader: BinaryReader): Accessor => {
 const readAccessorChunk = (
   reader: BinaryReader,
   chunkHeader: ChunkHeader
-): Accessor[] => {
+): AccessorSpec[] => {
   const bytesPerAccessor = 14;
   const accessorCount = chunkHeader.byteCount / bytesPerAccessor;
 
   expect(accessorCount > 0, "Accessor count must be nonzero.");
 
-  const accessors: Accessor[] = [];
+  const accessors: AccessorSpec[] = [];
   for (let i = 0; i < accessorCount; i++) {
-    const accessor = readAccessor(reader);
+    const accessor = readAccessorSpec(reader);
     accessors.push(accessor);
   }
 
@@ -278,11 +431,7 @@ const readBufferChunk = (reader: BinaryReader): ArrayBuffer[] => {
 
   expect(bufferCount > 0, "Buffer count must be nonzero.");
 
-  const buffers: ArrayBuffer[] = [];
-  for (let i = 0; i < bufferCount; i++) {
-    const buffer = readBuffer(reader);
-    buffers.push(buffer);
-  }
+  const buffers = times(bufferCount, () => readBuffer(reader));
 
   return buffers;
 };
@@ -332,11 +481,7 @@ const readMeshChunk = (
   const bytesPerMesh = 12;
   const meshCount = chunkHeader.byteCount / bytesPerMesh;
 
-  const meshes: MeshSpec[] = [];
-  for (let i = 0; i < meshCount; i++) {
-    const meshSpec = readMeshSpec(reader);
-    meshes.push(meshSpec);
-  }
+  const meshes = times(meshCount, () => readMeshSpec(reader));
 
   return meshes;
 };
@@ -362,11 +507,7 @@ const readObjectChunk = (
 
   expect(objectCount > 0, "Object count must be nonzero.");
 
-  const objectSpecs: ObjectSpec[] = [];
-  for (let i = 0; i < objectCount; i++) {
-    const spec = readObjectSpec(reader);
-    objectSpecs.push(spec);
-  }
+  const objectSpecs = times(objectCount, () => readObjectSpec(reader));
 
   return objectSpecs;
 };
@@ -388,11 +529,9 @@ const readTransformNodeChunk = (reader: BinaryReader): TransformNodeSpec[] => {
 
   expect(transformNodeCount > 0, "Transform node count must be nonzero.");
 
-  const transformNodeSpecs: TransformNodeSpec[] = [];
-  for (let i = 0; i < transformNodeCount; i++) {
-    const spec = readTransformNodeSpec(reader);
-    transformNodeSpecs.push(spec);
-  }
+  const transformNodeSpecs = times(transformNodeCount, () =>
+    readTransformNodeSpec(reader)
+  );
 
   return transformNodeSpecs;
 };
@@ -441,11 +580,9 @@ const readVertexLayoutChunk = (reader: BinaryReader): VertexLayoutSpec[] => {
 
   expect(vertexLayoutCount > 0, "Vertex layout count must be nonzero.");
 
-  const vertexLayouts: VertexLayoutSpec[] = [];
-  for (let i = 0; i < vertexLayoutCount; i++) {
-    const vertexLayoutSpec = readVertexLayoutSpec(reader);
-    vertexLayouts.push(vertexLayoutSpec);
-  }
+  const vertexLayouts = times(vertexLayoutCount, () =>
+    readVertexLayoutSpec(reader)
+  );
 
   return vertexLayouts;
 };
@@ -455,13 +592,30 @@ const readVertexLayoutSpec = (reader: BinaryReader): VertexLayoutSpec => {
 
   expect(vertexAttributeCount > 0, "Vertex attribute count must be nonzero.");
 
-  const vertexAttributes: VertexAttributeSpec[] = [];
-  for (let i = 0; i < vertexAttributeCount; i++) {
-    const vertexAttributeSpec = readVertexAttributeSpec(reader);
-    vertexAttributes.push(vertexAttributeSpec);
-  }
+  const vertexAttributes = times(vertexAttributeCount, () =>
+    readVertexAttributeSpec(reader)
+  );
 
   return {
     vertexAttributes,
   };
+};
+
+const resolveTransformNodeConnections = (
+  specs: TransformNodeSpec[],
+  transformNodes: TransformNode[]
+) => {
+  for (let i = 0; i < transformNodes.length; i++) {
+    const spec = specs[i];
+    const transformNode = transformNodes[i];
+    transformNode.children = spec.childIndices.map(childIndex => {
+      expectIndexInBounds(
+        childIndex,
+        transformNodes,
+        "Transform node child index is out of bounds."
+      );
+      const child = transformNodes[childIndex];
+      return child;
+    });
+  }
 };
