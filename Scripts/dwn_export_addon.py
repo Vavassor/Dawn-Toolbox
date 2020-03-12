@@ -40,36 +40,58 @@ class OBJECT_OT_export_dwn(Operator, ExportHelper):
         return {"FINISHED"}
 
 
-def write_string(file, value):
+def get_accessor_chunk(objects):
+    chunk = bytearray()
+    chunk.append(0xef)
+    return chunk
+
+
+def get_file_content(objects):
+    content = bytearray()
+    write_chunk(content, "ACCE", get_accessor_chunk(objects))
+    return content
+
+
+def get_file_header(content):
+    file_header = bytearray()
+    write_string(file_header, file_header_tag)
+    write_uint32(file_header, file_version)
+    write_uint32(file_header, len(content))
+    return file_header
+
+
+def write_chunk(content, tag, chunk):
+    write_string(content, tag)
+    write_uint32(content, len(chunk))
+    content.extend(chunk)
+
+
+def write_string(content, value):
     value_bytes = value.encode("utf-8")
-    file.write(value_bytes)
+    content.extend(value_bytes)
 
 
-def write_uint16(file, value):
+def write_uint16(content, value):
     uint16_value = value.to_bytes(2, byteorder="little", signed=False)
-    file.write(uint16_value)
+    content.extend(uint16_value)
 
 
-def write_uint32(file, value):
+def write_uint32(content, value):
     uint32_value = value.to_bytes(4, byteorder="little", signed=False)
-    file.write(uint32_value)
+    content.extend(uint32_value)
 
 
-def write_uint8(file, value):
+def write_uint8(content, value):
     uint8_value = value.to_bytes(1, byteorder="little", signed=False)
-    file.write(uint8_value)
-
-
-def write_file_header(file, byte_count):
-    write_string(file, file_header_tag)
-    write_uint32(file, file_version)
-    write_uint32(file, byte_count)
+    content.extend(uint8_value)
 
 
 def save_dwn(objects, filepath):
+    content = get_file_content(objects)
+    file_header = get_file_header(content)
     with open(filepath, "wb") as file:
-        write_file_header(file, 1)
-        write_uint8(file, 7)
+        file.write(file_header)
+        file.write(content)
 
 
 def export_menu_item_func(self, context):
