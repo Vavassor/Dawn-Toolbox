@@ -1,23 +1,25 @@
 # Table of Contents
 # S1. Blender info
-# S2. Blender utilities
-# S3. File writing utilities
+# S2. File writing utilities
+# S3. Blender utilities
 # S4. Dawn types
 # S5. Dawn scene file
 # S6. Blender Addon
 
 # S1. Blender info ************************************************************
 
-import bmesh
 import bpy
+import math
+import struct
 from bpy_extras.io_utils import ExportHelper
 from bpy.types import Operator
 from enum import IntEnum
 from mathutils import Vector, Quaternion
-from typing import List, Union
+from typing import Iterable, List, Union
 
 BpyContext = bpy.types.Context
 BpyMesh = bpy.types.Mesh
+BpyMeshLoopColorLayer = bpy.types.MeshLoopColorLayer
 BpyObject = bpy.types.Object
 
 bl_info = {
@@ -33,33 +35,27 @@ bl_info = {
 file_header_tag = "DWNSCENE"
 file_version = 1
 
-# S2. Blender utilities *******************************************************
+# S2. File writing utilities **************************************************
 
 
-def get_all_children_by_parent(objects: List[BpyObject]) -> dict:
-    children_by_parent = dict()
-    for obj in objects:
-        parent = obj.parent
-        children = children_by_parent[parent] if (
-            parent in children_by_parent) else []
-        children.append(obj)
-        children_by_parent[parent] = children
-    return children_by_parent
+def pack_float_array(values: Iterable[float]) -> bytes:
+    float_list = [struct.pack("<f", value) for value in values]
+    return b"".join(float_list)
 
 
-def filter_by_type(objects: List[BpyObject], type):
-    return [obj for obj in objects if obj.type == type]
+def pack_int_array(
+        values: Iterable[int],
+        bytes_per_value: int, signed: bool) -> bytes:
+    int_list = [
+        value.to_bytes(
+            bytes_per_value, byteorder="little", signed=signed)
+        for value in values]
+    return b"".join(int_list)
 
 
-def triangulate_mesh(obj: BpyObject):
-    mesh = obj.data
-    b = bmesh.new()
-    b.from_mesh(mesh)
-    bmesh.ops.triangulate(b, faces=b.faces[:], quad_method=0, ngon_method=0)
-    b.to_mesh(mesh)
-    b.free()
-
-# S3. File writing utilities **************************************************
+def pack_uint8_norm_array(values: Iterable[float]) -> bytes:
+    float_list = [math.floor(255 * value) for value in values]
+    return b"".join(float_list)
 
 
 def write_string(content: bytearray, value: str):
@@ -81,21 +77,112 @@ def write_uint8(content: bytearray, value: int):
     uint8_value = value.to_bytes(1, byteorder="little", signed=False)
     content.extend(uint8_value)
 
+# S3. Blender utilities *******************************************************
+
+
+def get_all_children_by_parent(objects: List[BpyObject]) -> dict:
+    children_by_parent = dict()
+    for obj in objects:
+        parent = obj.parent
+        children = children_by_parent[parent] if (
+            parent in children_by_parent) else []
+        children.append(obj)
+        children_by_parent[parent] = children
+    return children_by_parent
+
+
+def filter_by_type(objects: List[BpyObject], type):
+    return [obj for obj in objects if obj.type == type]
+
+
+def pack_mesh_loop_color_layer(layer: BpyMeshLoopColorLayer) -> bytes:
+    interleaved_colors: List[float] = []
+    for loop_color in layer.data:
+        interleaved_colors.extend(loop_color.color)
+    return pack_uint8_norm_array(interleaved_colors)
+
+
+def triangulate_mesh(obj: BpyObject):
+    import bmesh
+    mesh = obj.data
+    b = bmesh.new()
+    b.from_mesh(mesh)
+    bmesh.ops.triangulate(b, faces=b.faces[:], quad_method=0, ngon_method=0)
+    b.to_mesh(mesh)
+    b.free()
+
 # S4. Dawn types **************************************************************
 
 
 class ComponentType(IntEnum):
     INVALID = 0
-    FLOAT1 = 1
-    FLOAT2 = 2
-    FLOAT3 = 3
-    FLOAT4 = 4
-    INT8 = 5
-    INT16 = 6
-    INT32 = 7
-    UINT8 = 8
-    UINT16 = 9
-    UINT32 = 10
+    FLOAT = 1
+    INT8 = 2
+    INT16 = 3
+    INT32 = 4
+    UINT8 = 5
+    UINT16 = 6
+    UINT32 = 7
+
+    def get_size_in_bytes(self) -> int:
+        if self.value is ComponentType.INVALID:
+            return 0
+        elif self.value is ComponentType.FLOAT:
+            return 4
+        elif self.value is ComponentType.INT8:
+            return 1
+        elif self.value is ComponentType.INT16:
+            return 2
+        elif self.value is ComponentType.INT32:
+            return 4
+        elif self.value is ComponentType.UINT8:
+            return 1
+        elif self.value is ComponentType.UINT16:
+            return 2
+        elif self.value is ComponentType.UINT32:
+            return 4
+        else:
+            return 0
+
+    def is_integer(self) -> bool:
+        if self.value is ComponentType.INVALID:
+            return False
+        elif self.value is ComponentType.FLOAT:
+            return False
+        elif self.value is ComponentType.INT8:
+            return True
+        elif self.value is ComponentType.INT16:
+            return True
+        elif self.value is ComponentType.INT32:
+            return True
+        elif self.value is ComponentType.UINT8:
+            return True
+        elif self.value is ComponentType.UINT16:
+            return True
+        elif self.value is ComponentType.UINT32:
+            return True
+        else:
+            return False
+
+    def is_signed(self) -> bool:
+        if self.value is ComponentType.INVALID:
+            return False
+        elif self.value is ComponentType.FLOAT:
+            return True
+        elif self.value is ComponentType.INT8:
+            return True
+        elif self.value is ComponentType.INT16:
+            return True
+        elif self.value is ComponentType.INT32:
+            return True
+        elif self.value is ComponentType.UINT8:
+            return False
+        elif self.value is ComponentType.UINT16:
+            return False
+        elif self.value is ComponentType.UINT32:
+            return False
+        else:
+            return False
 
 
 class Accessor:
@@ -112,9 +199,10 @@ class Accessor:
 
 class VertexAttributeType(IntEnum):
     INVALID = 0
-    NORMAL = 1
-    POSITION = 2
-    TEXCOORD = 3
+    COLOR = 1
+    NORMAL = 2
+    POSITION = 3
+    TEXCOORD = 4
 
 
 class VertexAttribute:
@@ -188,7 +276,6 @@ class Scene:
     def add_vertex_layout(self, vertex_layout: VertexLayout):
         self.vertex_layouts.append(vertex_layout)
 
-
 # S5. Dawn scene file *********************************************************
 
 
@@ -199,15 +286,64 @@ def get_transform(obj: BpyObject) -> Transform:
         scale=obj.matrix_basis.to_scale())
 
 
+def pack_components(values: list, bytes_per_component: int,
+                    component_type: ComponentType):
+    if component_type.is_integer():
+        return pack_int_array(
+            values, bytes_per_component, component_type.is_signed())
+    else:
+        return pack_float_array(values, bytes_per_component)
+
+
+def add_accessor(scene: Scene, values: list, component_count: int,
+                 component_type: ComponentType) -> Accessor:
+    bytes_per_component = component_type.get_size_in_bytes()
+    content = pack_components(values, bytes_per_component, component_type)
+    scene.add_buffer(content)
+    accessor = Accessor(buffer=content, byte_count=len(content),
+                        byte_index=0, byte_stride=bytes_per_component,
+                        component_count=component_count,
+                        component_type=component_type)
+    scene.add_accessor(accessor)
+    return accessor
+
+
+def add_vertex_layout(scene: Scene, bpy_mesh: BpyMesh) -> VertexLayout:
+    positions = []
+    normals = []
+    for loop in bpy_mesh.loops:
+        vertex = bpy_mesh.vertices[loop.vertex_index]
+        positions.extend(vertex.co)
+        normals.extend(loop.normal)
+    position_accessor = add_accessor(scene, positions, 3, ComponentType.FLOAT)
+    normal_accessor = add_accessor(scene, normals, 3, ComponentType.FLOAT)
+    attributes: List[VertexAttribute] = [
+        VertexAttribute(position_accessor, VertexAttributeType.POSITION),
+        VertexAttribute(normal_accessor, VertexAttributeType.NORMAL)
+    ]
+    active_vertex_color_layer = bpy_mesh.vertex_colors.active
+    if active_vertex_color_layer is not None:
+        vertex_colors = pack_mesh_loop_color_layer(active_vertex_color_layer)
+        color_accessor = add_accessor(
+            scene, vertex_colors, 4, ComponentType.UINT8)
+        attributes.append(VertexAttribute(
+            color_accessor, VertexAttributeType.COLOR))
+    vertex_layout = VertexLayout(attributes)
+    scene.add_vertex_layout(vertex_layout)
+    return vertex_layout
+
+
 def add_mesh(scene: Scene, obj: BpyObject) -> Mesh:
     triangulate_mesh(obj)
     bpy_mesh: BpyMesh = obj.data
-    indicies = []
-    for polygon in bpy_mesh.polygons:
-        indicies.extend(polygon.vertices)
-    # mesh = Mesh(index_accessor, vertex_layout)
-    # return mesh
-    return None
+    bpy_mesh.calc_normals_split()
+    indicies = [loop.index for loop in bpy_mesh.loops]
+    index_accessor = add_accessor(
+        scene=scene, values=indicies, component_count=1,
+        component_type=ComponentType.UINT16)
+    vertex_layout = add_vertex_layout(scene, bpy_mesh)
+    mesh = Mesh(index_accessor, vertex_layout)
+    return mesh
 
 
 def add_object(scene: Scene, obj: BpyObject) -> Object:
@@ -264,7 +400,6 @@ def save_dwn(objects: List[BpyObject], filepath: str):
         file.write(file_header)
         file.write(content)
 
-
 # S6. Blender Addon ***********************************************************
 
 
@@ -282,7 +417,7 @@ class OBJECT_OT_export_dwn(Operator, ExportHelper):
         default=True)
 
     def execute(self, context: BpyContext):
-        if context.active_object.mode == "EDIT":
+        if bpy.ops.object.mode_set.poll():
             bpy.ops.object.mode_set(mode="OBJECT")
         objects = (context.selected_objects
                    if self.should_export_selected_only else
