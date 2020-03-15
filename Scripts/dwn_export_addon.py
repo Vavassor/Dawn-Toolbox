@@ -58,6 +58,10 @@ def pack_uint8_norm_array(values: Iterable[float]) -> bytes:
     return b"".join(float_list)
 
 
+def write_float32_array(content: bytearray, values: Iterable[float]):
+    content.extend(pack_float_array(values))
+
+
 def write_string(content: bytearray, value: str):
     value_bytes = value.encode("utf-8")
     content.extend(value_bytes)
@@ -89,6 +93,10 @@ def get_all_children_by_parent(objects: List[BpyObject]) -> dict:
         children.append(obj)
         children_by_parent[parent] = children
     return children_by_parent
+
+
+def get_quaternion_values(quaternion: Quaternion) -> List[float]:
+    return [quaternion.w, quaternion.x, quaternion.y, quaternion.z]
 
 
 def filter_by_type(objects: List[BpyObject], type):
@@ -371,7 +379,6 @@ def add_transform_nodes(scene: Scene, objects: List[BpyObject]):
 def get_accessor_chunk(scene: Scene) -> bytearray:
     chunk = bytearray()
     accessors = scene.accessors
-    write_uint16(chunk, len(accessors))
     for accessor in accessors:
         write_uint32(chunk, accessor.byte_count)
         write_uint32(chunk, accessor.byte_index)
@@ -382,15 +389,50 @@ def get_accessor_chunk(scene: Scene) -> bytearray:
     return chunk
 
 
+def get_buffer_chunk(scene: Scene) -> bytearray:
+    chunk = bytearray()
+    buffers: List[bytearray] = scene.buffers
+    write_uint16(chunk, len(buffers))
+    for buffer in buffers:
+        write_uint32(chunk, len(buffer))
+        chunk.extend(buffer)
+    return chunk
+
+
 def get_mesh_chunk(scene: Scene) -> bytearray:
     chunk = bytearray()
     meshes: List[Mesh] = scene.meshes
-    write_uint16(chunk, len(meshes))
     placeholder_material_index = 0
     for mesh in meshes:
         write_uint16(chunk, scene.accessors.index(mesh.index_accessor))
         write_uint16(chunk, placeholder_material_index)
         write_uint16(chunk, scene.vertex_layouts.index(mesh.vertex_layout))
+    return chunk
+
+
+def get_object_chunk(scene: Scene) -> bytearray:
+    chunk = bytearray()
+    objects: List[Object] = scene.objects
+    for obj in objects:
+        write_uint16(chunk, scene.meshes.index(obj.content))
+        write_uint8(chunk, obj.type)
+    return chunk
+
+
+def get_transform_node_chunk(scene: Scene) -> bytearray:
+    chunk = bytearray()
+    transform_nodes: List[TransformNode] = scene.transform_nodes
+    write_uint16(chunk, len(transform_nodes))
+    for transform_node in transform_nodes:
+        transform = transform_node.transform
+        write_float32_array(
+            chunk, get_quaternion_values(transform.orientation))
+        write_float32_array(chunk, transform.position.xyz)
+        write_float32_array(chunk, transform.scale.xyz)
+        write_uint16(chunk, scene.objects.index(transform_node.object))
+        write_uint16(chunk, len(transform_node.children))
+        for child in transform_node.children:
+            write_uint16(chunk, scene.objects.index(child))
     return chunk
 
 
@@ -415,7 +457,10 @@ def get_file_content(objects: List[BpyObject]) -> bytearray:
     content = bytearray()
     write_chunk(content, "ACCE", get_accessor_chunk(scene))
     write_chunk(content, "MESH", get_mesh_chunk(scene))
+    write_chunk(content, "OBJE", get_object_chunk(scene))
+    write_chunk(content, "TRAN", get_transform_node_chunk(scene))
     write_chunk(content, "VERT", get_vertex_layout_chunk(scene))
+    write_chunk(content, "BUFF", get_buffer_chunk(scene))
     return content
 
 
