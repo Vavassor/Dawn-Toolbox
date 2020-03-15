@@ -346,6 +346,7 @@ def add_mesh(scene: Scene, obj: BpyObject) -> Mesh:
         component_type=ComponentType.UINT16)
     vertex_layout = add_vertex_layout(scene, bpy_mesh)
     mesh = Mesh(index_accessor, vertex_layout)
+    scene.add_mesh(mesh)
     return mesh
 
 
@@ -381,12 +382,40 @@ def get_accessor_chunk(scene: Scene) -> bytearray:
     return chunk
 
 
+def get_mesh_chunk(scene: Scene) -> bytearray:
+    chunk = bytearray()
+    meshes: List[Mesh] = scene.meshes
+    write_uint16(chunk, len(meshes))
+    placeholder_material_index = 0
+    for mesh in meshes:
+        write_uint16(chunk, scene.accessors.index(mesh.index_accessor))
+        write_uint16(chunk, placeholder_material_index)
+        write_uint16(chunk, scene.vertex_layouts.index(mesh.vertex_layout))
+    return chunk
+
+
+def get_vertex_layout_chunk(scene: Scene) -> bytearray:
+    chunk = bytearray()
+    vertex_layouts: List[VertexLayout] = scene.vertex_layouts
+    write_uint16(chunk, len(vertex_layouts))
+    for vertex_layout in vertex_layouts:
+        vertex_attributes = vertex_layout.vertex_attributes
+        write_uint16(chunk, len(vertex_attributes))
+        for vertex_attribute in vertex_attributes:
+            write_uint16(chunk, scene.accessors.index(
+                vertex_attribute.accessor))
+            write_uint8(chunk, vertex_attribute.type)
+    return chunk
+
+
 def get_file_content(objects: List[BpyObject]) -> bytearray:
     mesh_objects = filter_by_type(objects, "MESH")
     scene = Scene()
     add_transform_nodes(scene, mesh_objects)
     content = bytearray()
     write_chunk(content, "ACCE", get_accessor_chunk(scene))
+    write_chunk(content, "MESH", get_mesh_chunk(scene))
+    write_chunk(content, "VERT", get_vertex_layout_chunk(scene))
     return content
 
 
