@@ -107,7 +107,9 @@ def triangulate_mesh(obj: BpyObject):
     mesh = obj.data
     b = bmesh.new()
     b.from_mesh(mesh)
-    bmesh.ops.triangulate(b, faces=b.faces[:], quad_method=0, ngon_method=0)
+    bmesh.ops.triangulate(
+        b, faces=b.faces[:],
+        quad_method="BEAUTY", ngon_method="BEAUTY")
     b.to_mesh(mesh)
     b.free()
 
@@ -125,61 +127,61 @@ class ComponentType(IntEnum):
     UINT32 = 7
 
     def get_size_in_bytes(self) -> int:
-        if self.value is ComponentType.INVALID:
+        if self.value == ComponentType.INVALID:
             return 0
-        elif self.value is ComponentType.FLOAT:
+        elif self.value == ComponentType.FLOAT:
             return 4
-        elif self.value is ComponentType.INT8:
+        elif self.value == ComponentType.INT8:
             return 1
-        elif self.value is ComponentType.INT16:
+        elif self.value == ComponentType.INT16:
             return 2
-        elif self.value is ComponentType.INT32:
+        elif self.value == ComponentType.INT32:
             return 4
-        elif self.value is ComponentType.UINT8:
+        elif self.value == ComponentType.UINT8:
             return 1
-        elif self.value is ComponentType.UINT16:
+        elif self.value == ComponentType.UINT16:
             return 2
-        elif self.value is ComponentType.UINT32:
+        elif self.value == ComponentType.UINT32:
             return 4
         else:
             return 0
 
     def is_integer(self) -> bool:
-        if self.value is ComponentType.INVALID:
+        if self.value == ComponentType.INVALID:
             return False
-        elif self.value is ComponentType.FLOAT:
+        elif self.value == ComponentType.FLOAT:
             return False
-        elif self.value is ComponentType.INT8:
+        elif self.value == ComponentType.INT8:
             return True
-        elif self.value is ComponentType.INT16:
+        elif self.value == ComponentType.INT16:
             return True
-        elif self.value is ComponentType.INT32:
+        elif self.value == ComponentType.INT32:
             return True
-        elif self.value is ComponentType.UINT8:
+        elif self.value == ComponentType.UINT8:
             return True
-        elif self.value is ComponentType.UINT16:
+        elif self.value == ComponentType.UINT16:
             return True
-        elif self.value is ComponentType.UINT32:
+        elif self.value == ComponentType.UINT32:
             return True
         else:
             return False
 
     def is_signed(self) -> bool:
-        if self.value is ComponentType.INVALID:
+        if self.value == ComponentType.INVALID:
             return False
-        elif self.value is ComponentType.FLOAT:
+        elif self.value == ComponentType.FLOAT:
             return True
-        elif self.value is ComponentType.INT8:
+        elif self.value == ComponentType.INT8:
             return True
-        elif self.value is ComponentType.INT16:
+        elif self.value == ComponentType.INT16:
             return True
-        elif self.value is ComponentType.INT32:
+        elif self.value == ComponentType.INT32:
             return True
-        elif self.value is ComponentType.UINT8:
+        elif self.value == ComponentType.UINT8:
             return False
-        elif self.value is ComponentType.UINT16:
+        elif self.value == ComponentType.UINT16:
             return False
-        elif self.value is ComponentType.UINT32:
+        elif self.value == ComponentType.UINT32:
             return False
         else:
             return False
@@ -292,16 +294,17 @@ def pack_components(values: list, bytes_per_component: int,
         return pack_int_array(
             values, bytes_per_component, component_type.is_signed())
     else:
-        return pack_float_array(values, bytes_per_component)
+        return pack_float_array(values)
 
 
 def add_accessor(scene: Scene, values: list, component_count: int,
                  component_type: ComponentType) -> Accessor:
     bytes_per_component = component_type.get_size_in_bytes()
+    byte_stride = bytes_per_component * component_count
     content = pack_components(values, bytes_per_component, component_type)
     scene.add_buffer(content)
     accessor = Accessor(buffer=content, byte_count=len(content),
-                        byte_index=0, byte_stride=bytes_per_component,
+                        byte_index=0, byte_stride=byte_stride,
                         component_count=component_count,
                         component_type=component_type)
     scene.add_accessor(accessor)
@@ -309,8 +312,8 @@ def add_accessor(scene: Scene, values: list, component_count: int,
 
 
 def add_vertex_layout(scene: Scene, bpy_mesh: BpyMesh) -> VertexLayout:
-    positions = []
-    normals = []
+    positions: List[float] = []
+    normals: List[float] = []
     for loop in bpy_mesh.loops:
         vertex = bpy_mesh.vertices[loop.vertex_index]
         positions.extend(vertex.co)
@@ -321,8 +324,8 @@ def add_vertex_layout(scene: Scene, bpy_mesh: BpyMesh) -> VertexLayout:
         VertexAttribute(position_accessor, VertexAttributeType.POSITION),
         VertexAttribute(normal_accessor, VertexAttributeType.NORMAL)
     ]
-    active_vertex_color_layer = bpy_mesh.vertex_colors.active
-    if active_vertex_color_layer is not None:
+    if bpy_mesh.vertex_colors.active is not None:
+        active_vertex_color_layer = bpy_mesh.vertex_colors.active
         vertex_colors = pack_mesh_loop_color_layer(active_vertex_color_layer)
         color_accessor = add_accessor(
             scene, vertex_colors, 4, ComponentType.UINT8)
@@ -358,15 +361,23 @@ def add_transform_nodes(scene: Scene, objects: List[BpyObject]):
     for obj in objects:
         content = add_object(scene, obj)
         transform_node = TransformNode(
-            children=children_by_parent[obj],
+            children=children_by_parent.get(obj, []),
             obj=content,
             transform=get_transform(obj))
         scene.add_transform_node(transform_node)
 
 
-def get_accessor_chunk(accessors: List[Accessor]) -> bytearray:
+def get_accessor_chunk(scene: Scene) -> bytearray:
     chunk = bytearray()
-    chunk.append(0xef)
+    accessors = scene.accessors
+    write_uint16(chunk, len(accessors))
+    for accessor in accessors:
+        write_uint32(chunk, accessor.byte_count)
+        write_uint32(chunk, accessor.byte_index)
+        write_uint16(chunk, accessor.byte_stride)
+        write_uint16(chunk, scene.buffers.index(accessor.buffer))
+        write_uint8(chunk, accessor.component_count)
+        write_uint8(chunk, accessor.component_type)
     return chunk
 
 
@@ -375,7 +386,7 @@ def get_file_content(objects: List[BpyObject]) -> bytearray:
     scene = Scene()
     add_transform_nodes(scene, mesh_objects)
     content = bytearray()
-    write_chunk(content, "ACCE", get_accessor_chunk(scene.accessors))
+    write_chunk(content, "ACCE", get_accessor_chunk(scene))
     return content
 
 
