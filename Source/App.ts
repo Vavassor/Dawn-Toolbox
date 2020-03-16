@@ -43,6 +43,10 @@ import { COLORS } from "./Colors";
 import { drawPrimitives, PRIMITIVE_BATCH_CAP_IN_BYTES } from "./PrimitiveDraw";
 import { Rotor3 } from "./Geometry/Rotor3";
 import { Bivector3 } from "./Geometry/Bivector3";
+import * as SceneFile from "./SceneFile";
+import testDwn from "./Scenes/test.dwn";
+import { getBinaryFile } from "./Fetch";
+import { DoubleBuffer } from "./DoubleBuffer";
 
 export interface App {
   buffers: BufferSet;
@@ -57,6 +61,7 @@ export interface App {
 }
 
 interface BufferSet {
+  dynamic: DoubleBuffer<GloBuffer[]>;
   primitiveIndex: GloBuffer;
   primitiveVertex: GloBuffer;
   test: GloBuffer;
@@ -97,7 +102,7 @@ export const createApp = (
 ): App => {
   const keyMappings = createKeyMappings();
   const programs = createShaderProgramSet(context);
-  return {
+  const app: App = {
     buffers: createBufferSet(context),
     camera: {
       pitch: 0,
@@ -111,6 +116,8 @@ export const createApp = (
     primitiveContext: createPrimitiveContext(),
     programs,
   };
+  loadScenes(app);
+  return app;
 };
 
 export const handleResize = (event: UIEvent, app: App): any => {
@@ -155,6 +162,7 @@ const createBufferSet = (context: GloContext): BufferSet => {
   });
 
   return {
+    dynamic: new DoubleBuffer([], []),
     primitiveVertex,
     primitiveIndex,
     test,
@@ -318,6 +326,12 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
     basic,
     lit,
   };
+};
+
+const loadScenes = async (app: App) => {
+  const fileContent = await getBinaryFile(testDwn);
+  const scene = SceneFile.deserialize(fileContent);
+  app.buffers.dynamic.back = 
 };
 
 export const updateFrame = (app: App) => {

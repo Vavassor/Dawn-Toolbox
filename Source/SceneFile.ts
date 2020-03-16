@@ -23,7 +23,7 @@ import { times } from "./Array";
 const FILE_HEADER_TAG = "DWNSCENE";
 const FILE_VERSION = 1;
 
-interface Accessor {
+export interface Accessor {
   buffer: ArrayBuffer;
   byteCount: number;
   byteIndex: number;
@@ -55,7 +55,7 @@ interface ChunkHeader {
   byteCount: number;
 }
 
-enum ComponentType {
+export enum ComponentType {
   Invalid,
   Float1,
   Float2,
@@ -75,12 +75,12 @@ interface FileHeader {
   byteCount: number;
 }
 
-interface Mesh {
+export interface Mesh {
   indexAccessor: Accessor;
   vertexLayout: VertexLayout;
 }
 
-interface MeshObject {
+export interface MeshObject {
   mesh: Mesh;
   type: ObjectType.Mesh;
 }
@@ -91,32 +91,32 @@ interface MeshSpec {
   vertexLayoutIndex: number;
 }
 
-type Object = MeshObject;
+export type Object = MeshObject;
 
 interface ObjectSpec {
   contentIndex: number;
   type: ObjectType;
 }
 
-enum ObjectType {
+export enum ObjectType {
   Invalid,
   Mesh,
 }
 
-interface Scene {
+export interface Scene {
   buffers: ArrayBuffer[];
   meshes: Mesh[];
   rootTransformNode: TransformNode | null;
   transformNodes: TransformNode[];
 }
 
-interface Transform {
+export interface Transform {
   orientation: Rotor3;
   position: Point3;
   scale: Vector3;
 }
 
-interface TransformNode {
+export interface TransformNode {
   children: TransformNode[];
   object: Object;
   transform: Transform;
@@ -128,7 +128,7 @@ interface TransformNodeSpec {
   transform: Transform;
 }
 
-interface VertexAttribute {
+export interface VertexAttribute {
   accessor: Accessor;
   type: VertexAttributeType;
 }
@@ -138,14 +138,14 @@ interface VertexAttributeSpec {
   type: VertexAttributeType;
 }
 
-enum VertexAttributeType {
+export enum VertexAttributeType {
   Invalid,
   Normal,
   Position,
   Texcoord,
 }
 
-interface VertexLayout {
+export interface VertexLayout {
   vertexAttributes: VertexAttribute[];
 }
 

@@ -26,6 +26,10 @@ module.exports = {
         test: /\.glsl$/,
         use: ["raw-loader"],
       },
+      {
+        test: /\.dwn$/,
+        use: ["file-loader"],
+      },
     ],
   },
   resolve: {
