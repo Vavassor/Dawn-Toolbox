@@ -6,6 +6,10 @@ export const createZeroArray = (count: number): number[] => {
   return array;
 };
 
+export function flattenOnce<T>(arrays: T[][]): T[] {
+  return arrays.reduce((priorValues, array) => priorValues.concat(array), []);
+}
+
 export const range = (start: number, stop: number, step: number) => {
   return Array.from(
     { length: (stop - start) / step + 1 },

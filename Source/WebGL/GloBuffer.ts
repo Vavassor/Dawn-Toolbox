@@ -1,6 +1,9 @@
 import { GloContext } from "./GloContext";
 
-export type BufferFormat = "INDEX_BUFFER" | "VERTEX_BUFFER";
+export enum BufferFormat {
+  IndexBuffer,
+  VertexBuffer,
+}
 
 export type BufferSpec = BufferSpecContent | BufferSpecEmpty;
 
@@ -23,7 +26,10 @@ export interface BufferUpdate {
   offsetInBytes: number;
 }
 
-export type BufferUsage = "DYNAMIC" | "STATIC";
+export enum BufferUsage {
+  Dynamic,
+  Static,
+}
 
 export interface GloBuffer {
   format: GLenum;
@@ -66,9 +72,9 @@ const getBufferFormat = (
 ): GLenum => {
   const { gl } = context;
   switch (bufferFormat) {
-    case "INDEX_BUFFER":
+    case BufferFormat.IndexBuffer:
       return gl.ELEMENT_ARRAY_BUFFER;
-    case "VERTEX_BUFFER":
+    case BufferFormat.VertexBuffer:
       return gl.ARRAY_BUFFER;
     default:
       throw new Error(`Buffer format value of ${bufferFormat} is unknown.`);
@@ -81,9 +87,9 @@ const getBufferUsage = (
 ): GLenum => {
   const { gl } = context;
   switch (bufferUsage) {
-    case "DYNAMIC":
+    case BufferUsage.Dynamic:
       return gl.DYNAMIC_DRAW;
-    case "STATIC":
+    case BufferUsage.Static:
       return gl.STATIC_DRAW;
     default:
       throw new Error(`Buffer usage value of ${bufferUsage} is unknown.`);

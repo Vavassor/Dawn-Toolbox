@@ -119,6 +119,7 @@ export interface Transform {
 export interface TransformNode {
   children: TransformNode[];
   object: Object;
+  parent: TransformNode | null;
   transform: Transform;
 }
 
@@ -297,6 +298,7 @@ const createTransformNodeWithoutChildren = (
   return {
     children: [],
     object,
+    parent: null,
     transform,
   };
 };
@@ -615,6 +617,7 @@ const resolveTransformNodeConnections = (
         "Transform node child index is out of bounds."
       );
       const child = transformNodes[childIndex];
+      child.parent = transformNode;
       return child;
     });
   }

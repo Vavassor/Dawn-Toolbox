@@ -1,5 +1,11 @@
 import { Color } from "./Color";
-import { GloBuffer, createBuffer } from "./WebGL/GloBuffer";
+import {
+  GloBuffer,
+  createBuffer,
+  BufferSpec,
+  BufferUsage,
+  BufferFormat,
+} from "./WebGL/GloBuffer";
 import { clearTarget, GloContext, draw } from "./WebGL/GloContext";
 import { Pipeline, createPipeline, setPipeline } from "./WebGL/Pipeline";
 import { createShader } from "./WebGL/Shader";
@@ -46,10 +52,11 @@ import { Bivector3 } from "./Geometry/Bivector3";
 import * as SceneFile from "./SceneFile";
 import testDwn from "./Scenes/test.dwn";
 import { getBinaryFile } from "./Fetch";
-import { DoubleBuffer } from "./DoubleBuffer";
+import { flattenOnce } from "./Array";
 
 export interface App {
   buffers: BufferSet;
+  bufferChangeSet: BufferChangeSet;
   camera: Camera;
   canvasSize: Size2;
   context: GloContext;
@@ -58,13 +65,24 @@ export interface App {
   pipelines: PipelineSet;
   primitiveContext: PrimitiveContext;
   programs: ShaderProgramSet;
+  transformNodes: TransformNode[];
+  transformNodeChangeSet: TransformNodeChangeSet;
+}
+
+interface BufferChangeSet {
+  added: BufferSpec[];
 }
 
 interface BufferSet {
-  dynamic: DoubleBuffer<GloBuffer[]>;
+  dynamic: GloBuffer[];
   primitiveIndex: GloBuffer;
   primitiveVertex: GloBuffer;
   test: GloBuffer;
+}
+
+interface BufferWithFormat {
+  content: ArrayBuffer;
+  format: BufferFormat;
 }
 
 interface Camera {
@@ -79,6 +97,10 @@ interface DirectionalLight {
 }
 
 export type HandleMouseMove = (event: MouseEvent) => void;
+
+interface MeshObject {
+  
+}
 
 interface PipelineSet {
   line: Pipeline;
@@ -96,6 +118,23 @@ interface ShaderProgramSet {
   lit: ShaderProgram;
 }
 
+interface Transform {
+  orientation: Rotor3;
+  position: Point3;
+  scale: Vector3;
+}
+
+interface TransformNode {
+  children: TransformNode[];
+  object: MeshObject;
+  parent: TransformNode;
+  transform: Transform;
+}
+
+interface TransformNodeChangeSet {
+  added: TransformNode[];
+}
+
 export const createApp = (
   context: GloContext,
   initialCanvasSize: Size2
@@ -104,6 +143,7 @@ export const createApp = (
   const programs = createShaderProgramSet(context);
   const app: App = {
     buffers: createBufferSet(context),
+    bufferChangeSet: createBufferChangeSet(),
     camera: {
       pitch: 0,
       position: new Point3([0, 0, 1]),
@@ -115,6 +155,8 @@ export const createApp = (
     pipelines: createPipelineSet(context, programs),
     primitiveContext: createPrimitiveContext(),
     programs,
+    transformNodes: [],
+    transformNodeChangeSet: createTransformNodeChangeSet(),
   };
   loadScenes(app);
   return app;
@@ -145,24 +187,24 @@ const createBufferSet = (context: GloContext): BufferSet => {
 
   const test = createBuffer(context, {
     content: arrayBuffer,
-    format: "VERTEX_BUFFER",
-    usage: "STATIC",
+    format: BufferFormat.VertexBuffer,
+    usage: BufferUsage.Static,
   });
 
   const primitiveIndex = createBuffer(context, {
     byteCount: PRIMITIVE_BATCH_CAP_IN_BYTES,
-    format: "INDEX_BUFFER",
-    usage: "DYNAMIC",
+    format: BufferFormat.IndexBuffer,
+    usage: BufferUsage.Dynamic,
   });
 
   const primitiveVertex = createBuffer(context, {
     byteCount: PRIMITIVE_BATCH_CAP_IN_BYTES,
-    format: "VERTEX_BUFFER",
-    usage: "DYNAMIC",
+    format: BufferFormat.VertexBuffer,
+    usage: BufferUsage.Dynamic,
   });
 
   return {
-    dynamic: new DoubleBuffer([], []),
+    dynamic: [],
     primitiveVertex,
     primitiveIndex,
     test,
@@ -328,10 +370,46 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
   };
 };
 
+const createTransformNodeChangeSet = (): TransformNodeChangeSet => {
+  return {
+    added: [],
+  };
+};
+
+const getBufferWithFormats = (scene: SceneFile.Scene): BufferWithFormat[] => {
+  return flattenOnce(
+    scene.meshes.map(mesh => {
+      const indexBuffer: BufferWithFormat = {
+        content: mesh.indexAccessor.buffer,
+        format: BufferFormat.IndexBuffer,
+      };
+      const vertexBuffers = mesh.vertexLayout.vertexAttributes.map(
+        vertexAttribute => {
+          const vertexBuffer: BufferWithFormat = {
+            content: vertexAttribute.accessor.buffer,
+            format: BufferFormat.VertexBuffer,
+          };
+          return vertexBuffer;
+        }
+      );
+      return vertexBuffers.concat(indexBuffer);
+    })
+  );
+};
+
 const loadScenes = async (app: App) => {
+  const { bufferChangeSet } = app;
   const fileContent = await getBinaryFile(testDwn);
   const scene = SceneFile.deserialize(fileContent);
-  app.buffers.dynamic.back = 
+  const bufferWithFormats = getBufferWithFormats(scene);
+  bufferChangeSet.added = bufferWithFormats.map(buffer => {
+    return {
+      byteCount: buffer.content.byteLength,
+      content: buffer.content,
+      format: buffer.format,
+      usage: BufferUsage.Static,
+    };
+  });
 };
 
 export const updateFrame = (app: App) => {
@@ -347,6 +425,7 @@ export const updateFrame = (app: App) => {
 
   updateInput(input);
   updateCamera(camera, input);
+  updateBufferChangeSet(app);
   resetPrimitives(primitiveContext);
 
   addLineSegment(primitiveContext, {
@@ -498,6 +577,20 @@ const addAxisIndicator = (context: PrimitiveContext) => {
     endpoints: [origin, zAxis],
     style: { color: COLORS.blue },
   });
+};
+
+const createBufferChangeSet = (): BufferChangeSet => {
+  return {
+    added: [],
+  };
+};
+
+const updateBufferChangeSet = (app: App) => {
+  const { buffers, bufferChangeSet, context } = app;
+  const addedBuffers = bufferChangeSet.added;
+  bufferChangeSet.added = [];
+  const newBuffers = addedBuffers.map(spec => createBuffer(context, spec));
+  buffers.dynamic = buffers.dynamic.concat(newBuffers);
 };
 
 const updateCamera = (camera: Camera, input: InputState) => {
