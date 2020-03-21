@@ -63,6 +63,8 @@ export const readFloat32Array = (
     return reader.dataView.getFloat32(byteIndex, true);
   });
 
+  reader.byteIndex += bytesPerFloat32 * count;
+
   return values;
 };
 
@@ -75,7 +77,9 @@ export const readString = (reader: BinaryReader, byteCount: number): string => {
   const start = reader.byteIndex;
   const end = start + byteCount;
   const uint8View = new Uint8Array(reader.sourceData.slice(start, end));
-  return reader.textDecoder.decode(uint8View);
+  const result = reader.textDecoder.decode(uint8View);
+  reader.byteIndex += byteCount;
+  return result;
 };
 
 export const readUint16 = (reader: BinaryReader): number => {

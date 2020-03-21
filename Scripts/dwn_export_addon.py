@@ -54,8 +54,10 @@ def pack_int_array(
 
 
 def pack_uint8_norm_array(values: Iterable[float]) -> bytes:
-    float_list = [math.floor(255 * value) for value in values]
-    return b"".join(float_list)
+    int_list = [math.floor(255 * value).to_bytes(
+        1, byteorder="little", signed=False)
+        for value in values]
+    return b"".join(int_list)
 
 
 def write_float32_array(content: bytearray, values: Iterable[float]):

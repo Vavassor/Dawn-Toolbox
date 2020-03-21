@@ -374,6 +374,16 @@ const createTransformNodeChangeSet = (): TransformNodeChangeSet => {
   };
 };
 
+const getAccessorByType = (
+  vertexAttributes: Dwn.VertexAttribute[],
+  type: Dwn.VertexAttributeType
+): Dwn.Accessor => {
+  const attribute = vertexAttributes.find(
+    vertexAttribute => vertexAttribute.type === type
+  );
+  return attribute.accessor;
+};
+
 const getBufferWithFormats = (scene: Dwn.Scene): BufferWithFormat[] => {
   return flattenOnce(
     scene.meshes.map(mesh => {
@@ -419,16 +429,16 @@ const interleaveAttributes = (
         case Dwn.ComponentType.Float32: {
           const sourceView = new Float32Array(buffer, startByteIndex);
           const targetView = new Float32Array(vertices, attributeByteIndex);
-          for (let i = 0; i < componentCount; i++) {
-            targetView[i] = sourceView[i];
+          for (let j = 0; j < componentCount; j++) {
+            targetView[j] = sourceView[j];
           }
           break;
         }
         case Dwn.ComponentType.Uint32: {
           const sourceView = new Uint32Array(buffer, startByteIndex);
           const targetView = new Uint32Array(vertices, attributeByteIndex);
-          for (let i = 0; i < componentCount; i++) {
-            targetView[i] = sourceView[i];
+          for (let j = 0; j < componentCount; j++) {
+            targetView[j] = sourceView[j];
           }
           break;
         }
@@ -439,16 +449,6 @@ const interleaveAttributes = (
   }
 
   return vertices;
-};
-
-const getAccessorByType = (
-  vertexAttributes: Dwn.VertexAttribute[],
-  type: Dwn.VertexAttributeType
-): Dwn.Accessor => {
-  const attribute = vertexAttributes.find(
-    vertexAttribute => vertexAttribute.type === type
-  );
-  return attribute.accessor;
 };
 
 const loadScenes = async (app: App) => {
@@ -612,6 +612,15 @@ export const updateFrame = (app: App) => {
   );
 
   drawPrimitives(app);
+
+  if (buffers.dynamic.length > 1) {
+    draw(context, {
+      indexBuffer: buffers.dynamic[0],
+      indicesCount: 24,
+      startIndex: 0,
+      vertexBuffers: [buffers.dynamic[1]],
+    });
+  }
 };
 
 const addAxisIndicator = (context: PrimitiveContext) => {
