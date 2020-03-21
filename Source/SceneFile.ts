@@ -1,12 +1,10 @@
-import { Point3 } from "./Geometry/Point3";
-import { Vector3 } from "./Geometry/Vector3";
-import { TraceError } from "./TraceError";
-import { Rotor3 } from "./Geometry/Rotor3";
-import { Bivector3 } from "./Geometry/Bivector3";
+import { times } from "./Array";
 import {
   BinaryReader,
+  createBinaryReader,
   expect,
   expectBytesLeft,
+  expectIndexInBounds,
   haveReachedEndOfFile,
   readFloat32Array,
   readString,
@@ -15,10 +13,12 @@ import {
   readUint32,
   readUint8,
   skipBytes,
-  expectIndexInBounds,
-  createBinaryReader,
 } from "./BinaryReader";
-import { times } from "./Array";
+import { Bivector3 } from "./Geometry/Bivector3";
+import { Point3 } from "./Geometry/Point3";
+import { Rotor3 } from "./Geometry/Rotor3";
+import { Vector3 } from "./Geometry/Vector3";
+import { TraceError } from "./TraceError";
 
 const FILE_HEADER_TAG = "DWNSCENE";
 const FILE_VERSION = 1;
@@ -57,10 +57,7 @@ interface ChunkHeader {
 
 export enum ComponentType {
   Invalid,
-  Float1,
-  Float2,
-  Float3,
-  Float4,
+  Float32,
   Int8,
   Int16,
   Int32,
@@ -141,6 +138,7 @@ interface VertexAttributeSpec {
 
 export enum VertexAttributeType {
   Invalid,
+  Color,
   Normal,
   Position,
   Texcoord,
@@ -212,6 +210,17 @@ export const deserialize = (sourceData: ArrayBuffer): Scene => {
     rootTransformNode: transformNodes[0],
     transformNodes,
   };
+};
+
+export const getBytesPerAttribute = (accessor: Accessor): number => {
+  const { componentCount, componentType } = accessor;
+  const bytesPerComponent = getBytesPerComponent(componentType);
+  return bytesPerComponent * componentCount;
+};
+
+export const getVertexCount = (accessor: Accessor): number => {
+  const { byteCount, byteStride } = accessor;
+  return byteCount / byteStride;
 };
 
 const createAccessor = (
@@ -336,12 +345,30 @@ const createVertexLayout = (
   };
 };
 
+const getBytesPerComponent = (type: ComponentType): number => {
+  switch (type) {
+    case ComponentType.Float32:
+      return 4;
+    case ComponentType.Int8:
+      return 1;
+    case ComponentType.Int16:
+      return 2;
+    case ComponentType.Int32:
+      return 4;
+    case ComponentType.Uint8:
+      return 1;
+    case ComponentType.Uint16:
+      return 2;
+    case ComponentType.Uint32:
+      return 4;
+    default:
+      return 0;
+  }
+};
+
 const isComponentType = (type: number): boolean => {
   switch (type) {
-    case ComponentType.Float1:
-    case ComponentType.Float2:
-    case ComponentType.Float3:
-    case ComponentType.Float4:
+    case ComponentType.Float32:
     case ComponentType.Int16:
     case ComponentType.Int32:
     case ComponentType.Int8:
@@ -365,6 +392,7 @@ const isObjectType = (type: number): boolean => {
 
 const isVertexAttributeType = (type: number): boolean => {
   switch (type) {
+    case VertexAttributeType.Color:
     case VertexAttributeType.Normal:
     case VertexAttributeType.Position:
     case VertexAttributeType.Texcoord:

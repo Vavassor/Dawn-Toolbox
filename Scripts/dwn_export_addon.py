@@ -126,7 +126,7 @@ def triangulate_mesh(obj: BpyObject):
 
 class ComponentType(IntEnum):
     INVALID = 0
-    FLOAT = 1
+    FLOAT32 = 1
     INT8 = 2
     INT16 = 3
     INT32 = 4
@@ -137,7 +137,7 @@ class ComponentType(IntEnum):
     def get_size_in_bytes(self) -> int:
         if self.value == ComponentType.INVALID:
             return 0
-        elif self.value == ComponentType.FLOAT:
+        elif self.value == ComponentType.FLOAT32:
             return 4
         elif self.value == ComponentType.INT8:
             return 1
@@ -157,7 +157,7 @@ class ComponentType(IntEnum):
     def is_integer(self) -> bool:
         if self.value == ComponentType.INVALID:
             return False
-        elif self.value == ComponentType.FLOAT:
+        elif self.value == ComponentType.FLOAT32:
             return False
         elif self.value == ComponentType.INT8:
             return True
@@ -177,7 +177,7 @@ class ComponentType(IntEnum):
     def is_signed(self) -> bool:
         if self.value == ComponentType.INVALID:
             return False
-        elif self.value == ComponentType.FLOAT:
+        elif self.value == ComponentType.FLOAT32:
             return True
         elif self.value == ComponentType.INT8:
             return True
@@ -326,8 +326,9 @@ def add_vertex_layout(scene: Scene, bpy_mesh: BpyMesh) -> VertexLayout:
         vertex = bpy_mesh.vertices[loop.vertex_index]
         positions.extend(vertex.co)
         normals.extend(loop.normal)
-    position_accessor = add_accessor(scene, positions, 3, ComponentType.FLOAT)
-    normal_accessor = add_accessor(scene, normals, 3, ComponentType.FLOAT)
+    position_accessor = add_accessor(
+        scene, positions, 3, ComponentType.FLOAT32)
+    normal_accessor = add_accessor(scene, normals, 3, ComponentType.FLOAT32)
     attributes: List[VertexAttribute] = [
         VertexAttribute(position_accessor, VertexAttributeType.POSITION),
         VertexAttribute(normal_accessor, VertexAttributeType.NORMAL)

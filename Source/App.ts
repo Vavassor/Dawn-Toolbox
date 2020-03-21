@@ -1,58 +1,58 @@
+import { flattenOnce } from "./Array";
+import { clamp } from "./Clamp";
 import { Color } from "./Color";
+import { COLORS } from "./Colors";
+import { getBinaryFile } from "./Fetch";
+import { Bivector3 } from "./Geometry/Bivector3";
+import { Matrix4 } from "./Geometry/Matrix4";
+import { Point3 } from "./Geometry/Point3";
+import { Rotor3 } from "./Geometry/Rotor3";
+import { Vector2 } from "./Geometry/Vector2";
+import { Vector3 } from "./Geometry/Vector3";
 import {
-  GloBuffer,
-  createBuffer,
-  BufferSpec,
-  BufferUsage,
-  BufferFormat,
-} from "./WebGL/GloBuffer";
-import { clearTarget, GloContext, draw } from "./WebGL/GloContext";
-import { Pipeline, createPipeline, setPipeline } from "./WebGL/Pipeline";
-import { createShader } from "./WebGL/Shader";
+  Action,
+  Axis2dDirection,
+  createInputState,
+  getAxis2d,
+  InputState,
+  KeyboardEventKey,
+  KeyMapping,
+  KeyMappingType,
+  updateInput,
+} from "./Input";
 import {
-  createShaderProgram,
-  ShaderProgram,
-  setUniformMatrix4fv,
-  setUniform3fv,
-} from "./WebGL/ShaderProgram";
+  addCuboid,
+  addLineSegment,
+  addSphere,
+  createPrimitiveContext,
+  PrimitiveContext,
+  resetPrimitives,
+} from "./Primitive";
+import { drawPrimitives, PRIMITIVE_BATCH_CAP_IN_BYTES } from "./PrimitiveDraw";
+import * as Dwn from "./SceneFile";
+import testDwn from "./Scenes/test.dwn";
 import basicPixelSource from "./Shaders/basic.ps.glsl";
 import basicVertexSource from "./Shaders/basic.vs.glsl";
 import litPixelSource from "./Shaders/lit.ps.glsl";
 import litVertexSource from "./Shaders/lit.vs.glsl";
-import { Matrix4 } from "./Geometry/Matrix4";
-import { setViewport } from "./WebGL/Viewport";
 import { Size2 } from "./Size2";
-import { Point3 } from "./Geometry/Point3";
-import { Vector3 } from "./Geometry/Vector3";
-import { Vector2 } from "./Geometry/Vector2";
-import { clamp } from "./Clamp";
 import {
-  createInputState,
-  InputState,
-  KeyMapping,
-  updateInput,
-  getAxis2d,
-  Action,
-  Axis2dDirection,
-  KeyMappingType,
-  KeyboardEventKey,
-} from "./Input";
+  BufferFormat,
+  BufferSpec,
+  BufferUsage,
+  createBuffer,
+  GloBuffer,
+} from "./WebGL/GloBuffer";
+import { clearTarget, draw, GloContext } from "./WebGL/GloContext";
+import { createPipeline, Pipeline, setPipeline } from "./WebGL/Pipeline";
+import { createShader } from "./WebGL/Shader";
 import {
-  addLineSegment,
-  createPrimitiveContext,
-  PrimitiveContext,
-  resetPrimitives,
-  addSphere,
-  addCuboid,
-} from "./Primitive";
-import { COLORS } from "./Colors";
-import { drawPrimitives, PRIMITIVE_BATCH_CAP_IN_BYTES } from "./PrimitiveDraw";
-import { Rotor3 } from "./Geometry/Rotor3";
-import { Bivector3 } from "./Geometry/Bivector3";
-import * as SceneFile from "./SceneFile";
-import testDwn from "./Scenes/test.dwn";
-import { getBinaryFile } from "./Fetch";
-import { flattenOnce } from "./Array";
+  createShaderProgram,
+  setUniform3fv,
+  setUniformMatrix4fv,
+  ShaderProgram,
+} from "./WebGL/ShaderProgram";
+import { setViewport } from "./WebGL/Viewport";
 
 export interface App {
   buffers: BufferSet;
@@ -98,9 +98,7 @@ interface DirectionalLight {
 
 export type HandleMouseMove = (event: MouseEvent) => void;
 
-interface MeshObject {
-  
-}
+interface MeshObject {}
 
 interface PipelineSet {
   line: Pipeline;
@@ -376,31 +374,87 @@ const createTransformNodeChangeSet = (): TransformNodeChangeSet => {
   };
 };
 
-const getBufferWithFormats = (scene: SceneFile.Scene): BufferWithFormat[] => {
+const getBufferWithFormats = (scene: Dwn.Scene): BufferWithFormat[] => {
   return flattenOnce(
     scene.meshes.map(mesh => {
       const indexBuffer: BufferWithFormat = {
         content: mesh.indexAccessor.buffer,
         format: BufferFormat.IndexBuffer,
       };
-      const vertexBuffers = mesh.vertexLayout.vertexAttributes.map(
-        vertexAttribute => {
-          const vertexBuffer: BufferWithFormat = {
-            content: vertexAttribute.accessor.buffer,
-            format: BufferFormat.VertexBuffer,
-          };
-          return vertexBuffer;
-        }
-      );
-      return vertexBuffers.concat(indexBuffer);
+      const vertexBuffer: BufferWithFormat = {
+        content: interleaveAttributes(mesh.vertexLayout.vertexAttributes),
+        format: BufferFormat.VertexBuffer,
+      };
+      return [indexBuffer, vertexBuffer];
     })
   );
+};
+
+const interleaveAttributes = (
+  attributes: Dwn.VertexAttribute[]
+): ArrayBuffer => {
+  const types = [
+    Dwn.VertexAttributeType.Position,
+    Dwn.VertexAttributeType.Normal,
+    Dwn.VertexAttributeType.Color,
+  ];
+  const accessors = types.map(type => getAccessorByType(attributes, type));
+  const byteStride = accessors.reduce((byteStride, accessor) => {
+    const bytesPerAttribute = Dwn.getBytesPerAttribute(accessor);
+    return byteStride + bytesPerAttribute;
+  }, 0);
+  const vertexCount = Dwn.getVertexCount(accessors[0]);
+  const vertices = new ArrayBuffer(byteStride * vertexCount);
+
+  for (let i = 0; i < vertexCount; i++) {
+    const vertexByteIndex = byteStride * i;
+    let attributeByteOffset = 0;
+
+    for (const accessor of accessors) {
+      const { buffer, byteIndex, componentCount, componentType } = accessor;
+      const startByteIndex = accessor.byteStride * i + byteIndex;
+      const attributeByteIndex = vertexByteIndex + attributeByteOffset;
+
+      switch (componentType) {
+        case Dwn.ComponentType.Float32: {
+          const sourceView = new Float32Array(buffer, startByteIndex);
+          const targetView = new Float32Array(vertices, attributeByteIndex);
+          for (let i = 0; i < componentCount; i++) {
+            targetView[i] = sourceView[i];
+          }
+          break;
+        }
+        case Dwn.ComponentType.Uint32: {
+          const sourceView = new Uint32Array(buffer, startByteIndex);
+          const targetView = new Uint32Array(vertices, attributeByteIndex);
+          for (let i = 0; i < componentCount; i++) {
+            targetView[i] = sourceView[i];
+          }
+          break;
+        }
+      }
+
+      attributeByteOffset += Dwn.getBytesPerAttribute(accessor);
+    }
+  }
+
+  return vertices;
+};
+
+const getAccessorByType = (
+  vertexAttributes: Dwn.VertexAttribute[],
+  type: Dwn.VertexAttributeType
+): Dwn.Accessor => {
+  const attribute = vertexAttributes.find(
+    vertexAttribute => vertexAttribute.type === type
+  );
+  return attribute.accessor;
 };
 
 const loadScenes = async (app: App) => {
   const { bufferChangeSet } = app;
   const fileContent = await getBinaryFile(testDwn);
-  const scene = SceneFile.deserialize(fileContent);
+  const scene = Dwn.deserialize(fileContent);
   const bufferWithFormats = getBufferWithFormats(scene);
   bufferChangeSet.added = bufferWithFormats.map(buffer => {
     return {
