@@ -203,6 +203,27 @@ export const getBytesPerVertex = (
   return foundAttribute.stride;
 };
 
+export const getVertexFormatSize = (vertexFormat: VertexFormat): number => {
+  switch (vertexFormat) {
+    case "FLOAT1":
+      return 4;
+    case "FLOAT2":
+      return 8;
+    case "FLOAT3":
+      return 12;
+    case "FLOAT4":
+      return 16;
+    case "SBYTE4_NORM":
+      return 4;
+    case "UBYTE4_NORM":
+      return 4;
+    case "USHORT2_NORM":
+      return 4;
+    default:
+      throw new Error(`Vertex format of type ${vertexFormat} is unknown.`);
+  }
+};
+
 export const setPipeline = (context: GloContext, pipeline: Pipeline): void => {
   const { gl, state } = context;
   gl.useProgram(pipeline.shader.handle);
@@ -534,27 +555,6 @@ const getVertexFormatIsNormalized = (vertexFormat: VertexFormat): boolean => {
     case "UBYTE4_NORM":
     case "USHORT2_NORM":
       return true;
-    default:
-      throw new Error(`Vertex format of type ${vertexFormat} is unknown.`);
-  }
-};
-
-const getVertexFormatSize = (vertexFormat: VertexFormat): number => {
-  switch (vertexFormat) {
-    case "FLOAT1":
-      return 4;
-    case "FLOAT2":
-      return 8;
-    case "FLOAT3":
-      return 12;
-    case "FLOAT4":
-      return 16;
-    case "SBYTE4_NORM":
-      return 4;
-    case "UBYTE4_NORM":
-      return 4;
-    case "USHORT2_NORM":
-      return 4;
     default:
       throw new Error(`Vertex format of type ${vertexFormat} is unknown.`);
   }

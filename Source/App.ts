@@ -20,6 +20,7 @@ import {
   KeyMappingType,
   updateInput,
 } from "./Input";
+import { packSnorm } from "./Packing";
 import {
   addCuboid,
   addLineSegment,
@@ -44,7 +45,13 @@ import {
   GloBuffer,
 } from "./WebGL/GloBuffer";
 import { clearTarget, draw, GloContext } from "./WebGL/GloContext";
-import { createPipeline, Pipeline, setPipeline } from "./WebGL/Pipeline";
+import {
+  createPipeline,
+  getVertexFormatSize,
+  Pipeline,
+  setPipeline,
+  VertexFormat,
+} from "./WebGL/Pipeline";
 import { createShader } from "./WebGL/Shader";
 import {
   createShaderProgram,
@@ -408,43 +415,78 @@ const interleaveAttributes = (
     Dwn.VertexAttributeType.Normal,
     Dwn.VertexAttributeType.Color,
   ];
+  const targetVertexFormats: VertexFormat[] = [
+    "FLOAT3",
+    "SBYTE4_NORM",
+    "UBYTE4_NORM",
+  ];
   const accessors = types.map(type => getAccessorByType(attributes, type));
-  const byteStride = accessors.reduce((byteStride, accessor) => {
-    const bytesPerAttribute = Dwn.getBytesPerAttribute(accessor);
-    return byteStride + bytesPerAttribute;
-  }, 0);
+  const targetByteStride = targetVertexFormats.reduce(
+    (byteStride, vertexFormat) => {
+      const bytesPerAttribute = getVertexFormatSize(vertexFormat);
+      return byteStride + bytesPerAttribute;
+    },
+    0
+  );
   const vertexCount = Dwn.getVertexCount(accessors[0]);
-  const vertices = new ArrayBuffer(byteStride * vertexCount);
+  const vertices = new ArrayBuffer(targetByteStride * vertexCount);
 
   for (let i = 0; i < vertexCount; i++) {
-    const vertexByteIndex = byteStride * i;
+    const vertexByteIndex = targetByteStride * i;
     let attributeByteOffset = 0;
 
-    for (const accessor of accessors) {
+    for (let j = 0; j < accessors.length; j++) {
+      const accessor = accessors[j];
+      const targetVertexFormat = targetVertexFormats[j];
       const { buffer, byteIndex, componentCount, componentType } = accessor;
       const startByteIndex = accessor.byteStride * i + byteIndex;
       const attributeByteIndex = vertexByteIndex + attributeByteOffset;
 
       switch (componentType) {
         case Dwn.ComponentType.Float32: {
-          const sourceView = new Float32Array(buffer, startByteIndex);
-          const targetView = new Float32Array(vertices, attributeByteIndex);
-          for (let j = 0; j < componentCount; j++) {
-            targetView[j] = sourceView[j];
+          const sourceView = new DataView(buffer);
+          const bytesPerFloat32 = 4;
+          switch (targetVertexFormat) {
+            case "FLOAT3": {
+              const targetView = new Float32Array(vertices, attributeByteIndex);
+              for (let k = 0; k < componentCount; k++) {
+                targetView[k] = sourceView.getFloat32(
+                  bytesPerFloat32 * k + startByteIndex,
+                  true
+                );
+              }
+              break;
+            }
+            case "SBYTE4_NORM": {
+              const targetView = new Int8Array(vertices, attributeByteIndex);
+              for (let k = 0; k < componentCount; k++) {
+                const value = sourceView.getFloat32(
+                  bytesPerFloat32 * k + startByteIndex,
+                  true
+                );
+                targetView[k] = packSnorm(value);
+              }
+              break;
+            }
           }
           break;
         }
-        case Dwn.ComponentType.Uint32: {
-          const sourceView = new Uint32Array(buffer, startByteIndex);
-          const targetView = new Uint32Array(vertices, attributeByteIndex);
-          for (let j = 0; j < componentCount; j++) {
-            targetView[j] = sourceView[j];
+        case Dwn.ComponentType.Uint8: {
+          const sourceView = new DataView(buffer);
+          const targetView = new Uint8Array(vertices, attributeByteIndex);
+          switch (targetVertexFormat) {
+            case "UBYTE4_NORM": {
+              for (let k = 0; k < componentCount; k++) {
+                targetView[k] = sourceView.getUint8(k + startByteIndex);
+              }
+              break;
+            }
           }
           break;
         }
       }
 
-      attributeByteOffset += Dwn.getBytesPerAttribute(accessor);
+      attributeByteOffset += getVertexFormatSize(targetVertexFormat);
     }
   }
 
@@ -614,9 +656,24 @@ export const updateFrame = (app: App) => {
   drawPrimitives(app);
 
   if (buffers.dynamic.length > 1) {
+    const testModel = Matrix4.translation(new Vector3([-2, 2, 1]));
+    const testModelView = Matrix4.multiply(view, testModel);
+    const testModelViewProjection = Matrix4.multiply(projection, testModelView);
+    setUniformMatrix4fv(
+      context,
+      programs.lit,
+      "model",
+      Matrix4.toFloat32Array(Matrix4.transpose(testModel))
+    );
+    setUniformMatrix4fv(
+      context,
+      programs.lit,
+      "model_view_projection",
+      Matrix4.toFloat32Array(Matrix4.transpose(testModelViewProjection))
+    );
     draw(context, {
       indexBuffer: buffers.dynamic[0],
-      indicesCount: 24,
+      indicesCount: 36,
       startIndex: 0,
       vertexBuffers: [buffers.dynamic[1]],
     });

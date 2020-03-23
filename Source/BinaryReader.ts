@@ -51,10 +51,11 @@ export const readFloat32Array = (
   count: number
 ): number[] => {
   const bytesPerFloat32 = 4;
+  const sizeInBytes = bytesPerFloat32 * count;
 
   expectBytesLeft(
     reader,
-    bytesPerFloat32 * count,
+    sizeInBytes,
     `Failed reading float32 array at byte index ${reader.byteIndex}.`
   );
 
@@ -63,7 +64,7 @@ export const readFloat32Array = (
     return reader.dataView.getFloat32(byteIndex, true);
   });
 
-  reader.byteIndex += bytesPerFloat32 * count;
+  reader.byteIndex += sizeInBytes;
 
   return values;
 };

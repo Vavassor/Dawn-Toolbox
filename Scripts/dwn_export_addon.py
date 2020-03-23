@@ -86,6 +86,10 @@ def write_uint8(content: bytearray, value: int):
 # S3. Blender utilities *******************************************************
 
 
+def filter_by_type(objects: List[BpyObject], type):
+    return [obj for obj in objects if obj.type == type]
+
+
 def get_all_children_by_parent(objects: List[BpyObject]) -> dict:
     children_by_parent = dict()
     for obj in objects:
@@ -101,8 +105,12 @@ def get_quaternion_values(quaternion: Quaternion) -> List[float]:
     return [quaternion.w, quaternion.x, quaternion.y, quaternion.z]
 
 
-def filter_by_type(objects: List[BpyObject], type):
-    return [obj for obj in objects if obj.type == type]
+def get_indices(bpy_mesh: BpyMesh) -> List[float]:
+    indices: List[float] = []
+    for polygon in bpy_mesh.polygons:
+        loop_indices = [loop_index for loop_index in polygon.loop_indices]
+        indices.extend(loop_indices)
+    return indices
 
 
 def pack_mesh_loop_color_layer(layer: BpyMeshLoopColorLayer) -> bytes:
@@ -120,6 +128,7 @@ def triangulate_mesh(obj: BpyObject):
     bmesh.ops.triangulate(
         b, faces=b.faces[:],
         quad_method="BEAUTY", ngon_method="BEAUTY")
+    bmesh.ops.recalc_face_normals(b, faces=b.faces)
     b.to_mesh(mesh)
     b.free()
 
@@ -321,10 +330,12 @@ def add_accessor(scene: Scene, values: list, component_count: int,
     return accessor
 
 
-def add_vertex_layout(scene: Scene, bpy_mesh: BpyMesh) -> VertexLayout:
+def add_vertex_layout(
+        scene: Scene, bpy_mesh: BpyMesh, indices: List[int]) -> VertexLayout:
     positions: List[float] = []
     normals: List[float] = []
-    for loop in bpy_mesh.loops:
+    for index in indices:
+        loop = bpy_mesh.loops[index]
         vertex = bpy_mesh.vertices[loop.vertex_index]
         positions.extend(vertex.co)
         normals.extend(loop.normal)
@@ -351,11 +362,11 @@ def add_mesh(scene: Scene, obj: BpyObject) -> Mesh:
     triangulate_mesh(obj)
     bpy_mesh: BpyMesh = obj.data
     bpy_mesh.calc_normals_split()
-    indicies = [loop.index for loop in bpy_mesh.loops]
+    indices = get_indices(bpy_mesh)
     index_accessor = add_accessor(
-        scene=scene, values=indicies, component_count=1,
+        scene=scene, values=indices, component_count=1,
         component_type=ComponentType.UINT16)
-    vertex_layout = add_vertex_layout(scene, bpy_mesh)
+    vertex_layout = add_vertex_layout(scene, bpy_mesh, indices)
     mesh = Mesh(index_accessor, vertex_layout)
     scene.add_mesh(mesh)
     return mesh

@@ -212,12 +212,6 @@ export const deserialize = (sourceData: ArrayBuffer): Scene => {
   };
 };
 
-export const getBytesPerAttribute = (accessor: Accessor): number => {
-  const { componentCount, componentType } = accessor;
-  const bytesPerComponent = getBytesPerComponent(componentType);
-  return bytesPerComponent * componentCount;
-};
-
 export const getVertexCount = (accessor: Accessor): number => {
   const { byteCount, byteStride } = accessor;
   return byteCount / byteStride;

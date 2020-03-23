@@ -8,11 +8,11 @@ export const packSByte4FromVector4 = (vector: Vector4): number => {
   return (w << 24) | (z << 16) | (y << 8) | x;
 };
 
-const getSByteFromSnorm = (value: number): number => {
-  return Math.floor(127.5 * value);
-};
-
-const packSnorm = (value: number): number => {
+export const packSnorm = (value: number): number => {
   const x = getSByteFromSnorm(value);
   return x < 0 ? x + 256 : x;
+};
+
+const getSByteFromSnorm = (value: number): number => {
+  return Math.floor(127.5 * value);
 };
