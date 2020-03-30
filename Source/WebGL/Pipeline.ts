@@ -145,7 +145,7 @@ export interface VertexAttribute {
   bufferIndex: number;
   componentCount: number;
   isNormalized: boolean;
-  location: GLint;
+  location: GLint | null;
   offset: number;
   stride: number;
   type: GLenum;
@@ -350,12 +350,8 @@ const createVertexLayout = (
         offset + getVertexFormatSize(format)
       );
 
-      const location = program.attributeLocations.get(name);
-      if (location === undefined) {
-        throw new Error(
-          `Attribute ${name} was not found in the specified shader.`
-        );
-      }
+      let location = program.attributeLocations.get(name);
+      location = location ? location : null;
 
       return {
         bufferIndex,

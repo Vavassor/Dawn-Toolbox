@@ -36,6 +36,8 @@ import basicPixelSource from "./Shaders/basic.ps.glsl";
 import basicVertexSource from "./Shaders/basic.vs.glsl";
 import litPixelSource from "./Shaders/lit.ps.glsl";
 import litVertexSource from "./Shaders/lit.vs.glsl";
+import visualizeNormalPixelSource from "./Shaders/visualize_normal.ps.glsl";
+import visualizeNormalVertexSource from "./Shaders/visualize_normal.vs.glsl";
 import { Size2 } from "./Size2";
 import {
   BufferFormat,
@@ -111,6 +113,7 @@ interface PipelineSet {
   line: Pipeline;
   surface: Pipeline;
   test: Pipeline;
+  visualizeNormal: Pipeline;
 }
 
 interface PointLight {
@@ -121,6 +124,7 @@ interface PointLight {
 interface ShaderProgramSet {
   basic: ShaderProgram;
   lit: ShaderProgram;
+  visualizeNormal: ShaderProgram;
 }
 
 interface Transform {
@@ -307,10 +311,31 @@ const createPipelineSet = (
     },
   });
 
+  const visualizeNormal = createPipeline(context, {
+    depthStencil: {
+      shouldCompareDepth: true,
+      shouldWriteDepth: true,
+      shouldUseStencil: false,
+    },
+    inputAssembly: {
+      indexType: "UINT16",
+      primitiveTopology: "TRIANGLE_LIST",
+    },
+    shader: programs.visualizeNormal,
+    vertexLayout: {
+      attributes: [
+        { bufferIndex: 0, format: "FLOAT3", name: "vertex_position" },
+        { bufferIndex: 0, format: "SBYTE4_NORM", name: "vertex_normal" },
+        { bufferIndex: 0, format: "UBYTE4_NORM", name: "vertex_color" },
+      ],
+    },
+  });
+
   return {
     line,
     surface,
     test,
+    visualizeNormal,
   };
 };
 
@@ -332,6 +357,16 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
 
   const litPixelShader = createShader(context, {
     source: litPixelSource,
+    type: "PIXEL",
+  });
+
+  const visualizeNormalVertexShader = createShader(context, {
+    source: visualizeNormalVertexSource,
+    type: "VERTEX",
+  });
+
+  const visualizeNormalPixelShader = createShader(context, {
+    source: visualizeNormalPixelSource,
     type: "PIXEL",
   });
 
@@ -369,9 +404,21 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
     },
   });
 
+  const visualizeNormal = createShaderProgram(context, {
+    shaders: {
+      pixel: visualizeNormalPixelShader,
+      vertex: visualizeNormalVertexShader,
+    },
+    uniforms: ["model", "model_view_projection"],
+    vertexLayout: {
+      attributes: [{ name: "vertex_position" }, { name: "vertex_normal" }],
+    },
+  });
+
   return {
     basic,
     lit,
+    visualizeNormal,
   };
 };
 
