@@ -1,15 +1,21 @@
 import { Vector2 } from "./Geometry/Vector2";
 import { limitUnitLength, clamp } from "./Clamp";
 
-export type Action = "MOVE";
+export enum Action {
+  Move = "MOVE",
+}
 
-type Axis1dDirection = "NEGATIVE" | "POSITIVE";
+export enum Axis1dDirection {
+  Negative = "NEGATIVE",
+  Positive = "POSITIVE",
+}
 
-type Axis2dDirection =
-  | "NEGATIVE_X"
-  | "NEGATIVE_Y"
-  | "POSITIVE_X"
-  | "POSITIVE_Y";
+export enum Axis2dDirection {
+  NegativeX = "NEGATIVE_X",
+  NegativeY = "NEGATIVE_Y",
+  PositiveX = "POSITIVE_X",
+  PositiveY = "POSITIVE_Y",
+}
 
 interface ButtonState {
   framesDown: number;
@@ -35,6 +41,12 @@ interface KeyMappingButton {
   type: "BUTTON";
 }
 
+export enum KeyMappingType {
+  Axis1d = "AXIS_1D",
+  Axis2d = "AXIS_2D",
+  Button = "BUTTON",
+}
+
 export type KeyMapping = KeyMappingAxis1d | KeyMappingAxis2d | KeyMappingButton;
 
 export interface InputState {
@@ -49,15 +61,16 @@ export interface InputState {
   };
 }
 
-type KeyboardEventKey =
-  | "a"
-  | "ArrowDown"
-  | "ArrowLeft"
-  | "ArrowRight"
-  | "ArrowUp"
-  | "d"
-  | "s"
-  | "w";
+export enum KeyboardEventKey {
+  A = "a",
+  ArrowDown = "ArrowDown",
+  ArrowLeft = "ArrowLeft",
+  ArrowRight = "ArrowRight",
+  ArrowUp = "ArrowUp",
+  D = "d",
+  S = "s",
+  W = "w",
+}
 
 export const createInputState = (keyMappings: KeyMapping[]): InputState => {
   return {
@@ -118,13 +131,13 @@ export const updateInput = (input: InputState) => {
 
   for (const keyMapping of keyMappings) {
     switch (keyMapping.type) {
-      case "AXIS_1D":
+      case KeyMappingType.Axis1d:
         updateAxis1d(input, keyMapping);
         break;
-      case "AXIS_2D":
+      case KeyMappingType.Axis2d:
         updateAxis2d(input, keyMapping);
         break;
-      case "BUTTON": {
+      case KeyMappingType.Button: {
         updateButton(input, keyMapping);
         break;
       }
@@ -157,15 +170,15 @@ const createIsKeyDownByKey = (
 const createAxis1dsByAction = (
   keyMappings: KeyMapping[]
 ): Map<Action, number> => {
-  const axis2dsByAction = new Map<Action, number>();
+  const axis1dsByAction = new Map<Action, number>();
   const axis1dKeyMappings = keyMappings.filter(
-    keyMapping => keyMapping.type === "AXIS_2D"
+    keyMapping => keyMapping.type === KeyMappingType.Axis2d
   );
   const mappedActions = getMappedActions(axis1dKeyMappings);
   for (const action of mappedActions) {
-    axis2dsByAction.set(action, 0);
+    axis1dsByAction.set(action, 0);
   }
-  return axis2dsByAction;
+  return axis1dsByAction;
 };
 
 const createAxis2dsByAction = (
@@ -173,7 +186,7 @@ const createAxis2dsByAction = (
 ): Map<Action, Vector2> => {
   const axis2dsByAction = new Map<Action, Vector2>();
   const axis2dKeyMappings = keyMappings.filter(
-    keyMapping => keyMapping.type === "AXIS_2D"
+    keyMapping => keyMapping.type === KeyMappingType.Axis2d
   );
   const mappedActions = getMappedActions(axis2dKeyMappings);
   for (const action of mappedActions) {
@@ -187,7 +200,7 @@ const createButtonsByAction = (
 ): Map<Action, ButtonState> => {
   const buttonsByAction = new Map<Action, ButtonState>();
   const buttonKeyMappings = keyMappings.filter(
-    keyMapping => keyMapping.type === "BUTTON"
+    keyMapping => keyMapping.type === KeyMappingType.Button
   );
   const mappedActions = getMappedActions(buttonKeyMappings);
   for (const action of mappedActions) {
@@ -202,31 +215,31 @@ const getMappedActions = (keyMappings: KeyMapping[]): Action[] => {
 
 const getAxis2dComponent = (direction: Axis2dDirection): number => {
   switch (direction) {
-    case "NEGATIVE_X":
-    case "POSITIVE_X":
+    case Axis2dDirection.NegativeX:
+    case Axis2dDirection.PositiveX:
       return 0;
-    case "NEGATIVE_Y":
-    case "POSITIVE_Y":
+    case Axis2dDirection.NegativeY:
+    case Axis2dDirection.PositiveY:
       return 1;
   }
 };
 
 const getAxis1dSignedOne = (direction: Axis1dDirection): number => {
   switch (direction) {
-    case "NEGATIVE":
+    case Axis1dDirection.Negative:
       return -1;
-    case "POSITIVE":
+    case Axis1dDirection.Positive:
       return 1;
   }
 };
 
 const getAxis2dSignedOne = (direction: Axis2dDirection): number => {
   switch (direction) {
-    case "NEGATIVE_X":
-    case "NEGATIVE_Y":
+    case Axis2dDirection.NegativeX:
+    case Axis2dDirection.NegativeY:
       return -1;
-    case "POSITIVE_X":
-    case "POSITIVE_Y":
+    case Axis2dDirection.PositiveX:
+    case Axis2dDirection.PositiveY:
       return 1;
   }
 };

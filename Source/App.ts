@@ -1,49 +1,71 @@
+import { flattenOnce } from "./Array";
+import { clamp } from "./Clamp";
 import { Color } from "./Color";
-import { GloBuffer, createBuffer } from "./WebGL/GloBuffer";
-import { clearTarget, GloContext, draw } from "./WebGL/GloContext";
-import { Pipeline, createPipeline, setPipeline } from "./WebGL/Pipeline";
-import { createShader } from "./WebGL/Shader";
+import { COLORS } from "./Colors";
+import { getBinaryFile } from "./Fetch";
+import { Bivector3 } from "./Geometry/Bivector3";
+import { Matrix4 } from "./Geometry/Matrix4";
+import { Point3 } from "./Geometry/Point3";
+import { Rotor3 } from "./Geometry/Rotor3";
+import { Vector2 } from "./Geometry/Vector2";
+import { Vector3 } from "./Geometry/Vector3";
 import {
-  createShaderProgram,
-  ShaderProgram,
-  setUniformMatrix4fv,
-  setUniformMatrix3fv,
-  setUniform3fv,
-} from "./WebGL/ShaderProgram";
+  Action,
+  Axis2dDirection,
+  createInputState,
+  getAxis2d,
+  InputState,
+  KeyboardEventKey,
+  KeyMapping,
+  KeyMappingType,
+  updateInput,
+} from "./Input";
+import { packSnorm } from "./Packing";
+import {
+  addCuboid,
+  addLineSegment,
+  addSphere,
+  createPrimitiveContext,
+  PrimitiveContext,
+  resetPrimitives,
+} from "./Primitive";
+import { drawPrimitives, PRIMITIVE_BATCH_CAP_IN_BYTES } from "./PrimitiveDraw";
+import * as Dwn from "./SceneFile";
+import testDwn from "./Scenes/test.dwn";
 import basicPixelSource from "./Shaders/basic.ps.glsl";
 import basicVertexSource from "./Shaders/basic.vs.glsl";
 import litPixelSource from "./Shaders/lit.ps.glsl";
 import litVertexSource from "./Shaders/lit.vs.glsl";
-import { Matrix4 } from "./Geometry/Matrix4";
-import { setViewport } from "./WebGL/Viewport";
+import visualizeNormalPixelSource from "./Shaders/visualize_normal.ps.glsl";
+import visualizeNormalVertexSource from "./Shaders/visualize_normal.vs.glsl";
 import { Size2 } from "./Size2";
-import { Point3 } from "./Geometry/Point3";
-import { Vector3 } from "./Geometry/Vector3";
-import { Vector2 } from "./Geometry/Vector2";
-import { clamp } from "./Clamp";
 import {
-  createInputState,
-  InputState,
-  KeyMapping,
-  updateInput,
-  getAxis2d,
-} from "./Input";
+  BufferFormat,
+  BufferSpec,
+  BufferUsage,
+  createBuffer,
+  GloBuffer,
+} from "./WebGL/GloBuffer";
+import { clearTarget, draw, GloContext } from "./WebGL/GloContext";
 import {
-  addLineSegment,
-  createPrimitiveContext,
-  PrimitiveContext,
-  resetPrimitives,
-  addSphere,
-  addCuboid,
-} from "./Primitive";
-import { COLORS } from "./Colors";
-import { drawPrimitives, PRIMITIVE_BATCH_CAP_IN_BYTES } from "./PrimitiveDraw";
-import { Matrix3 } from "./Geometry/Matrix3";
-import { Rotor3 } from "./Geometry/Rotor3";
-import { Bivector3 } from "./Geometry/Bivector3";
+  createPipeline,
+  getVertexFormatSize,
+  Pipeline,
+  setPipeline,
+  VertexFormat,
+} from "./WebGL/Pipeline";
+import { createShader } from "./WebGL/Shader";
+import {
+  createShaderProgram,
+  setUniform3fv,
+  setUniformMatrix4fv,
+  ShaderProgram,
+} from "./WebGL/ShaderProgram";
+import { setViewport } from "./WebGL/Viewport";
 
 export interface App {
   buffers: BufferSet;
+  bufferChangeSet: BufferChangeSet;
   camera: Camera;
   canvasSize: Size2;
   context: GloContext;
@@ -52,12 +74,24 @@ export interface App {
   pipelines: PipelineSet;
   primitiveContext: PrimitiveContext;
   programs: ShaderProgramSet;
+  transformNodes: TransformNode[];
+  transformNodeChangeSet: TransformNodeChangeSet;
+}
+
+interface BufferChangeSet {
+  added: BufferSpec[];
 }
 
 interface BufferSet {
+  dynamic: GloBuffer[];
   primitiveIndex: GloBuffer;
   primitiveVertex: GloBuffer;
   test: GloBuffer;
+}
+
+interface BufferWithFormat {
+  content: ArrayBuffer;
+  format: BufferFormat;
 }
 
 interface Camera {
@@ -73,10 +107,13 @@ interface DirectionalLight {
 
 export type HandleMouseMove = (event: MouseEvent) => void;
 
+interface MeshObject {}
+
 interface PipelineSet {
   line: Pipeline;
   surface: Pipeline;
   test: Pipeline;
+  visualizeNormal: Pipeline;
 }
 
 interface PointLight {
@@ -87,6 +124,24 @@ interface PointLight {
 interface ShaderProgramSet {
   basic: ShaderProgram;
   lit: ShaderProgram;
+  visualizeNormal: ShaderProgram;
+}
+
+interface Transform {
+  orientation: Rotor3;
+  position: Point3;
+  scale: Vector3;
+}
+
+interface TransformNode {
+  children: TransformNode[];
+  object: MeshObject;
+  parent: TransformNode;
+  transform: Transform;
+}
+
+interface TransformNodeChangeSet {
+  added: TransformNode[];
 }
 
 export const createApp = (
@@ -95,8 +150,9 @@ export const createApp = (
 ): App => {
   const keyMappings = createKeyMappings();
   const programs = createShaderProgramSet(context);
-  return {
+  const app: App = {
     buffers: createBufferSet(context),
+    bufferChangeSet: createBufferChangeSet(),
     camera: {
       pitch: 0,
       position: new Point3([0, 0, 1]),
@@ -108,7 +164,11 @@ export const createApp = (
     pipelines: createPipelineSet(context, programs),
     primitiveContext: createPrimitiveContext(),
     programs,
+    transformNodes: [],
+    transformNodeChangeSet: createTransformNodeChangeSet(),
   };
+  loadScenes(app);
+  return app;
 };
 
 export const handleResize = (event: UIEvent, app: App): any => {
@@ -136,23 +196,24 @@ const createBufferSet = (context: GloContext): BufferSet => {
 
   const test = createBuffer(context, {
     content: arrayBuffer,
-    format: "VERTEX_BUFFER",
-    usage: "STATIC",
+    format: BufferFormat.VertexBuffer,
+    usage: BufferUsage.Static,
   });
 
   const primitiveIndex = createBuffer(context, {
     byteCount: PRIMITIVE_BATCH_CAP_IN_BYTES,
-    format: "INDEX_BUFFER",
-    usage: "DYNAMIC",
+    format: BufferFormat.IndexBuffer,
+    usage: BufferUsage.Dynamic,
   });
 
   const primitiveVertex = createBuffer(context, {
     byteCount: PRIMITIVE_BATCH_CAP_IN_BYTES,
-    format: "VERTEX_BUFFER",
-    usage: "DYNAMIC",
+    format: BufferFormat.VertexBuffer,
+    usage: BufferUsage.Dynamic,
   });
 
   return {
+    dynamic: [],
     primitiveVertex,
     primitiveIndex,
     test,
@@ -162,28 +223,28 @@ const createBufferSet = (context: GloContext): BufferSet => {
 const createKeyMappings = (): KeyMapping[] => {
   return [
     {
-      action: "MOVE",
-      direction: "POSITIVE_Y",
-      key: "w",
-      type: "AXIS_2D",
+      action: Action.Move,
+      direction: Axis2dDirection.PositiveY,
+      key: KeyboardEventKey.W,
+      type: KeyMappingType.Axis2d,
     },
     {
-      action: "MOVE",
-      direction: "NEGATIVE_Y",
-      key: "s",
-      type: "AXIS_2D",
+      action: Action.Move,
+      direction: Axis2dDirection.NegativeY,
+      key: KeyboardEventKey.S,
+      type: KeyMappingType.Axis2d,
     },
     {
-      action: "MOVE",
-      direction: "POSITIVE_X",
-      key: "d",
-      type: "AXIS_2D",
+      action: Action.Move,
+      direction: Axis2dDirection.PositiveX,
+      key: KeyboardEventKey.D,
+      type: KeyMappingType.Axis2d,
     },
     {
-      action: "MOVE",
-      direction: "NEGATIVE_X",
-      key: "a",
-      type: "AXIS_2D",
+      action: Action.Move,
+      direction: Axis2dDirection.NegativeX,
+      key: KeyboardEventKey.A,
+      type: KeyMappingType.Axis2d,
     },
   ];
 };
@@ -250,10 +311,31 @@ const createPipelineSet = (
     },
   });
 
+  const visualizeNormal = createPipeline(context, {
+    depthStencil: {
+      shouldCompareDepth: true,
+      shouldWriteDepth: true,
+      shouldUseStencil: false,
+    },
+    inputAssembly: {
+      indexType: "UINT16",
+      primitiveTopology: "TRIANGLE_LIST",
+    },
+    shader: programs.visualizeNormal,
+    vertexLayout: {
+      attributes: [
+        { bufferIndex: 0, format: "FLOAT3", name: "vertex_position" },
+        { bufferIndex: 0, format: "SBYTE4_NORM", name: "vertex_normal" },
+        { bufferIndex: 0, format: "UBYTE4_NORM", name: "vertex_color" },
+      ],
+    },
+  });
+
   return {
     line,
     surface,
     test,
+    visualizeNormal,
   };
 };
 
@@ -275,6 +357,16 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
 
   const litPixelShader = createShader(context, {
     source: litPixelSource,
+    type: "PIXEL",
+  });
+
+  const visualizeNormalVertexShader = createShader(context, {
+    source: visualizeNormalVertexSource,
+    type: "VERTEX",
+  });
+
+  const visualizeNormalPixelShader = createShader(context, {
+    source: visualizeNormalPixelSource,
     type: "PIXEL",
   });
 
@@ -312,10 +404,155 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
     },
   });
 
+  const visualizeNormal = createShaderProgram(context, {
+    shaders: {
+      pixel: visualizeNormalPixelShader,
+      vertex: visualizeNormalVertexShader,
+    },
+    uniforms: ["model", "model_view_projection"],
+    vertexLayout: {
+      attributes: [{ name: "vertex_position" }, { name: "vertex_normal" }],
+    },
+  });
+
   return {
     basic,
     lit,
+    visualizeNormal,
   };
+};
+
+const createTransformNodeChangeSet = (): TransformNodeChangeSet => {
+  return {
+    added: [],
+  };
+};
+
+const getAccessorByType = (
+  vertexAttributes: Dwn.VertexAttribute[],
+  type: Dwn.VertexAttributeType
+): Dwn.Accessor => {
+  const attribute = vertexAttributes.find(
+    vertexAttribute => vertexAttribute.type === type
+  );
+  return attribute.accessor;
+};
+
+const getBufferWithFormats = (scene: Dwn.Scene): BufferWithFormat[] => {
+  return flattenOnce(
+    scene.meshes.map(mesh => {
+      const indexBuffer: BufferWithFormat = {
+        content: mesh.indexAccessor.buffer,
+        format: BufferFormat.IndexBuffer,
+      };
+      const vertexBuffer: BufferWithFormat = {
+        content: interleaveAttributes(mesh.vertexLayout.vertexAttributes),
+        format: BufferFormat.VertexBuffer,
+      };
+      return [indexBuffer, vertexBuffer];
+    })
+  );
+};
+
+const interleaveAttributes = (
+  attributes: Dwn.VertexAttribute[]
+): ArrayBuffer => {
+  const types = [
+    Dwn.VertexAttributeType.Position,
+    Dwn.VertexAttributeType.Normal,
+    Dwn.VertexAttributeType.Color,
+  ];
+  const targetVertexFormats: VertexFormat[] = [
+    "FLOAT3",
+    "SBYTE4_NORM",
+    "UBYTE4_NORM",
+  ];
+  const accessors = types.map(type => getAccessorByType(attributes, type));
+  const targetByteStride = targetVertexFormats.reduce(
+    (byteStride, vertexFormat) => {
+      const bytesPerAttribute = getVertexFormatSize(vertexFormat);
+      return byteStride + bytesPerAttribute;
+    },
+    0
+  );
+  const vertexCount = Dwn.getVertexCount(accessors[0]);
+  const vertices = new ArrayBuffer(targetByteStride * vertexCount);
+
+  for (let i = 0; i < vertexCount; i++) {
+    const vertexByteIndex = targetByteStride * i;
+    let attributeByteOffset = 0;
+
+    for (let j = 0; j < accessors.length; j++) {
+      const accessor = accessors[j];
+      const targetVertexFormat = targetVertexFormats[j];
+      const { buffer, byteIndex, componentCount, componentType } = accessor;
+      const startByteIndex = accessor.byteStride * i + byteIndex;
+      const attributeByteIndex = vertexByteIndex + attributeByteOffset;
+
+      switch (componentType) {
+        case Dwn.ComponentType.Float32: {
+          const sourceView = new DataView(buffer);
+          const bytesPerFloat32 = 4;
+          switch (targetVertexFormat) {
+            case "FLOAT3": {
+              const targetView = new Float32Array(vertices, attributeByteIndex);
+              for (let k = 0; k < componentCount; k++) {
+                targetView[k] = sourceView.getFloat32(
+                  bytesPerFloat32 * k + startByteIndex,
+                  true
+                );
+              }
+              break;
+            }
+            case "SBYTE4_NORM": {
+              const targetView = new Int8Array(vertices, attributeByteIndex);
+              for (let k = 0; k < componentCount; k++) {
+                const value = sourceView.getFloat32(
+                  bytesPerFloat32 * k + startByteIndex,
+                  true
+                );
+                targetView[k] = packSnorm(value);
+              }
+              break;
+            }
+          }
+          break;
+        }
+        case Dwn.ComponentType.Uint8: {
+          const sourceView = new DataView(buffer);
+          const targetView = new Uint8Array(vertices, attributeByteIndex);
+          switch (targetVertexFormat) {
+            case "UBYTE4_NORM": {
+              for (let k = 0; k < componentCount; k++) {
+                targetView[k] = sourceView.getUint8(k + startByteIndex);
+              }
+              break;
+            }
+          }
+          break;
+        }
+      }
+
+      attributeByteOffset += getVertexFormatSize(targetVertexFormat);
+    }
+  }
+
+  return vertices;
+};
+
+const loadScenes = async (app: App) => {
+  const { bufferChangeSet } = app;
+  const fileContent = await getBinaryFile(testDwn);
+  const scene = Dwn.deserialize(fileContent);
+  const bufferWithFormats = getBufferWithFormats(scene);
+  bufferChangeSet.added = bufferWithFormats.map(buffer => {
+    return {
+      byteCount: buffer.content.byteLength,
+      content: buffer.content,
+      format: buffer.format,
+      usage: BufferUsage.Static,
+    };
+  });
 };
 
 export const updateFrame = (app: App) => {
@@ -331,6 +568,7 @@ export const updateFrame = (app: App) => {
 
   updateInput(input);
   updateCamera(camera, input);
+  updateBufferChangeSet(app);
   resetPrimitives(primitiveContext);
 
   addLineSegment(primitiveContext, {
@@ -463,6 +701,30 @@ export const updateFrame = (app: App) => {
   );
 
   drawPrimitives(app);
+
+  if (buffers.dynamic.length > 1) {
+    const testModel = Matrix4.translation(new Vector3([-2, 2, 1]));
+    const testModelView = Matrix4.multiply(view, testModel);
+    const testModelViewProjection = Matrix4.multiply(projection, testModelView);
+    setUniformMatrix4fv(
+      context,
+      programs.lit,
+      "model",
+      Matrix4.toFloat32Array(Matrix4.transpose(testModel))
+    );
+    setUniformMatrix4fv(
+      context,
+      programs.lit,
+      "model_view_projection",
+      Matrix4.toFloat32Array(Matrix4.transpose(testModelViewProjection))
+    );
+    draw(context, {
+      indexBuffer: buffers.dynamic[0],
+      indicesCount: 36,
+      startIndex: 0,
+      vertexBuffers: [buffers.dynamic[1]],
+    });
+  }
 };
 
 const addAxisIndicator = (context: PrimitiveContext) => {
@@ -484,6 +746,20 @@ const addAxisIndicator = (context: PrimitiveContext) => {
   });
 };
 
+const createBufferChangeSet = (): BufferChangeSet => {
+  return {
+    added: [],
+  };
+};
+
+const updateBufferChangeSet = (app: App) => {
+  const { buffers, bufferChangeSet, context } = app;
+  const addedBuffers = bufferChangeSet.added;
+  bufferChangeSet.added = [];
+  const newBuffers = addedBuffers.map(spec => createBuffer(context, spec));
+  buffers.dynamic = buffers.dynamic.concat(newBuffers);
+};
+
 const updateCamera = (camera: Camera, input: InputState) => {
   const { delta } = input.pointer;
   const horizontalPixelsPerRadian = 0.001;
@@ -495,7 +771,7 @@ const updateCamera = (camera: Camera, input: InputState) => {
   camera.yaw -= horizontalPixelsPerRadian * delta.x;
 
   const direction = Vector2.rotate(
-    getAxis2d(input, "MOVE"),
+    getAxis2d(input, Action.Move),
     camera.yaw + Math.PI / 2
   );
   const velocity = Vector2.multiply(moveSpeed, direction);
