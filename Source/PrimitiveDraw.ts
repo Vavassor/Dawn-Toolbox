@@ -15,6 +15,9 @@ import { Vector3 } from "./Geometry/Vector3";
 import { packSByte4FromVector4 } from "./Packing";
 import { Vector4 } from "./Geometry/Vector4";
 import { rotate } from "./Geometry/GeometricAlgebra";
+import { setUniformMatrix4fv } from "./WebGL/ShaderProgram";
+import { Matrix4 } from "./Geometry/Matrix4";
+import { getView, getProjection } from "./Camera";
 
 export const PRIMITIVE_BATCH_CAP_IN_BYTES = 16384;
 
@@ -333,7 +336,14 @@ const drawBatchIfFull = (
 };
 
 const drawLines = (app: App) => {
-  const { buffers, context, pipelines, primitiveContext } = app;
+  const {
+    buffers,
+    camera,
+    context,
+    pipelines,
+    primitiveContext,
+    programs,
+  } = app;
 
   const batch = createBatch(buffers.primitiveVertex, buffers.primitiveIndex);
 
@@ -344,6 +354,22 @@ const drawLines = (app: App) => {
   setPipeline(context, pipelines.line);
   const bytesPerIndex = pipelines.line.inputAssembly.bytesPerIndex;
   const bytesPerVertex = getBytesPerVertex(pipelines.line.vertexLayout, 0);
+
+  const model = Matrix4.identity();
+  const view = getView(camera);
+  const projection = getProjection(
+    camera,
+    app.canvasSize.width,
+    app.canvasSize.height
+  );
+  const modelView = Matrix4.multiply(view, model);
+  const modelViewProjection = Matrix4.multiply(projection, modelView);
+  setUniformMatrix4fv(
+    context,
+    programs.basic,
+    "model_view_projection",
+    Matrix4.toFloat32Array(Matrix4.transpose(modelViewProjection))
+  );
 
   for (const primitive of linePrimitives) {
     const indexCount = getIndexCount(primitive);

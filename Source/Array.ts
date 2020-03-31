@@ -10,7 +10,7 @@ export function flattenOnce<T>(arrays: T[][]): T[] {
   return arrays.reduce((priorValues, array) => priorValues.concat(array), []);
 }
 
-export const range = (start: number, stop: number, step: number) => {
+export const range = (start: number, stop: number, step: number): number[] => {
   return Array.from(
     { length: (stop - start) / step + 1 },
     (_, index) => step * index + start

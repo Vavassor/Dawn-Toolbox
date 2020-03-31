@@ -1,4 +1,5 @@
 import { flattenOnce } from "./Array";
+import { Camera, getProjection, getView } from "./Camera";
 import { clamp } from "./Clamp";
 import { Color } from "./Color";
 import { COLORS } from "./Colors";
@@ -86,18 +87,11 @@ interface BufferSet {
   dynamic: GloBuffer[];
   primitiveIndex: GloBuffer;
   primitiveVertex: GloBuffer;
-  test: GloBuffer;
 }
 
 interface BufferWithFormat {
   content: ArrayBuffer;
   format: BufferFormat;
-}
-
-interface Camera {
-  pitch: number;
-  position: Point3;
-  yaw: number;
 }
 
 interface DirectionalLight {
@@ -112,7 +106,6 @@ interface MeshObject {}
 interface PipelineSet {
   line: Pipeline;
   surface: Pipeline;
-  test: Pipeline;
   visualizeNormal: Pipeline;
 }
 
@@ -154,8 +147,11 @@ export const createApp = (
     buffers: createBufferSet(context),
     bufferChangeSet: createBufferChangeSet(),
     camera: {
+      farClipPlane: 100,
+      nearClipPlane: 0.001,
       pitch: 0,
       position: new Point3([0, 0, 1]),
+      verticalFieldOfView: Math.PI / 2,
       yaw: 0,
     },
     canvasSize: initialCanvasSize,
@@ -178,28 +174,6 @@ export const handleResize = (event: UIEvent, app: App): any => {
 };
 
 const createBufferSet = (context: GloContext): BufferSet => {
-  const arrayBuffer = new ArrayBuffer(16 * 3);
-  const floatView = new Float32Array(arrayBuffer);
-  const uint32View = new Uint32Array(arrayBuffer);
-  floatView[0] = 0;
-  floatView[1] = 0.5;
-  floatView[2] = 0;
-  uint32View[3] = 0xff0000ff;
-  floatView[4] = -0.5;
-  floatView[5] = -0.5;
-  floatView[6] = 0;
-  uint32View[7] = 0xff00ff00;
-  floatView[8] = 0.5;
-  floatView[9] = -0.5;
-  floatView[10] = 0;
-  uint32View[11] = 0xffff0000;
-
-  const test = createBuffer(context, {
-    content: arrayBuffer,
-    format: BufferFormat.VertexBuffer,
-    usage: BufferUsage.Static,
-  });
-
   const primitiveIndex = createBuffer(context, {
     byteCount: PRIMITIVE_BATCH_CAP_IN_BYTES,
     format: BufferFormat.IndexBuffer,
@@ -216,7 +190,6 @@ const createBufferSet = (context: GloContext): BufferSet => {
     dynamic: [],
     primitiveVertex,
     primitiveIndex,
-    test,
   };
 };
 
@@ -292,25 +265,6 @@ const createPipelineSet = (
     },
   });
 
-  const test = createPipeline(context, {
-    depthStencil: {
-      shouldCompareDepth: true,
-      shouldWriteDepth: true,
-      shouldUseStencil: false,
-    },
-    inputAssembly: {
-      indexType: "NONE",
-      primitiveTopology: "TRIANGLE_LIST",
-    },
-    shader: programs.basic,
-    vertexLayout: {
-      attributes: [
-        { bufferIndex: 0, format: "FLOAT3", name: "vertex_position" },
-        { bufferIndex: 0, format: "UBYTE4_NORM", name: "vertex_color" },
-      ],
-    },
-  });
-
   const visualizeNormal = createPipeline(context, {
     depthStencil: {
       shouldCompareDepth: true,
@@ -334,7 +288,6 @@ const createPipelineSet = (
   return {
     line,
     surface,
-    test,
     visualizeNormal,
   };
 };
@@ -619,17 +572,12 @@ export const updateFrame = (app: App) => {
     width: app.canvasSize.width,
   });
 
-  setPipeline(context, pipelines.test);
-
-  const { position, pitch, yaw } = camera;
   const model = Matrix4.identity();
-  const view = Matrix4.turnRh(position, yaw, pitch, Vector3.unitZ());
-  const projection = Matrix4.perspective(
-    Math.PI / 2,
+  const view = getView(camera);
+  const projection = getProjection(
+    camera,
     app.canvasSize.width,
-    app.canvasSize.height,
-    0.001,
-    100
+    app.canvasSize.height
   );
   const modelView = Matrix4.multiply(view, model);
   const modelViewProjection = Matrix4.multiply(projection, modelView);
@@ -642,19 +590,6 @@ export const updateFrame = (app: App) => {
     position: new Point3([1, -1, 1]),
     radiance: new Vector3([1, 1, 1]),
   };
-
-  setUniformMatrix4fv(
-    context,
-    programs.basic,
-    "model_view_projection",
-    Matrix4.toFloat32Array(Matrix4.transpose(modelViewProjection))
-  );
-
-  draw(context, {
-    indicesCount: 3,
-    startIndex: 0,
-    vertexBuffers: [buffers.test],
-  });
 
   setPipeline(context, pipelines.surface);
   setUniform3fv(
