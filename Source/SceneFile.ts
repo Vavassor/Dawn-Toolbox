@@ -103,7 +103,7 @@ export enum ObjectType {
 export interface Scene {
   buffers: ArrayBuffer[];
   meshes: Mesh[];
-  rootTransformNode: TransformNode | null;
+  rootTransformNodes: TransformNode[];
   transformNodes: TransformNode[];
 }
 
@@ -202,17 +202,21 @@ export const deserialize = (sourceData: ArrayBuffer): Scene => {
   const transformNodes = transformNodeSpecs.map(spec =>
     createTransformNodeWithoutChildren(spec, objects)
   );
+
   resolveTransformNodeConnections(transformNodeSpecs, transformNodes);
+  const rootTransformNodes = transformNodes.filter(
+    transformNode => !transformNode.parent
+  );
 
   return {
     buffers,
     meshes,
-    rootTransformNode: transformNodes[0],
+    rootTransformNodes,
     transformNodes,
   };
 };
 
-export const getVertexCount = (accessor: Accessor): number => {
+export const getElementCount = (accessor: Accessor): number => {
   const { byteCount, byteStride } = accessor;
   return byteCount / byteStride;
 };
@@ -337,27 +341,6 @@ const createVertexLayout = (
   return {
     vertexAttributes,
   };
-};
-
-const getBytesPerComponent = (type: ComponentType): number => {
-  switch (type) {
-    case ComponentType.Float32:
-      return 4;
-    case ComponentType.Int8:
-      return 1;
-    case ComponentType.Int16:
-      return 2;
-    case ComponentType.Int32:
-      return 4;
-    case ComponentType.Uint8:
-      return 1;
-    case ComponentType.Uint16:
-      return 2;
-    case ComponentType.Uint32:
-      return 4;
-    default:
-      return 0;
-  }
 };
 
 const isComponentType = (type: number): boolean => {

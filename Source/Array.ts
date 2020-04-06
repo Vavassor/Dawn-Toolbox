@@ -6,6 +6,14 @@ export const createZeroArray = (count: number): number[] => {
   return array;
 };
 
+export function flatMap<T, U>(
+  array: T[],
+  callbackfn: (value: T, index: number, array: T[]) => U[],
+  thisArg?: any
+): U[] {
+  return flattenOnce(array.map(callbackfn, thisArg));
+}
+
 export function flattenOnce<T>(arrays: T[][]): T[] {
   return arrays.reduce((priorValues, array) => priorValues.concat(array), []);
 }
