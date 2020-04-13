@@ -1,6 +1,7 @@
 import { Point3 } from "./Point3";
 import { Vector3 } from "./Vector3";
 import { Vector4 } from "./Vector4";
+import { Transform } from "./Transform";
 
 export class Matrix4 {
   rows: Vector4[];
@@ -27,6 +28,49 @@ export class Matrix4 {
       new Vector4([dilation.x, 0, 0, 0]),
       new Vector4([0, dilation.y, 0, 0]),
       new Vector4([0, 0, dilation.z, 0]),
+      Vector4.unitW(),
+    ]);
+  }
+
+  static fromTransform(transform: Transform): Matrix4 {
+    const { orientation, position, scale } = transform;
+
+    const w = orientation.a;
+    const x = orientation.b.yz;
+    const y = -orientation.b.xz;
+    const z = orientation.b.xy;
+
+    const xw = x * w;
+    const xx = x * x;
+    const xy = x * y;
+    const xz = x * z;
+
+    const yw = y * w;
+    const yy = y * y;
+    const yz = y * z;
+
+    const zw = z * w;
+    const zz = z * z;
+
+    return new Matrix4([
+      new Vector4([
+        (1 - 2 * (yy + zz)) * scale.x,
+        2 * (xy + zw) * scale.y,
+        2 * (xz - yw) * scale.z,
+        position.x,
+      ]),
+      new Vector4([
+        2 * (xy - zw) * scale.x,
+        (1 - 2 * (xx + zz)) * scale.y,
+        2 * (yz + xw) * scale.z,
+        position.y,
+      ]),
+      new Vector4([
+        2 * (xz + yw) * scale.x,
+        2 * (yz - xw) * scale.y,
+        (1 - 2 * (xx + yy)) * scale.z,
+        position.z,
+      ]),
       Vector4.unitW(),
     ]);
   }

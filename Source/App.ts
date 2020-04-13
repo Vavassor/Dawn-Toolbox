@@ -1,4 +1,4 @@
-import { flattenOnce, flatMap } from "./Array";
+import { flatMap } from "./Array";
 import { Camera, getProjection, getView } from "./Camera";
 import { clamp } from "./Clamp";
 import { Color } from "./Color";
@@ -63,6 +63,7 @@ import {
   ShaderProgram,
 } from "./WebGL/ShaderProgram";
 import { setViewport } from "./WebGL/Viewport";
+import { Transform } from "./Geometry/Transform";
 
 export interface App {
   buffers: BufferSet;
@@ -72,12 +73,13 @@ export interface App {
   context: GloContext;
   handleMouseMove?: HandleMouseMove;
   input: InputState;
+  meshes: MeshObject[];
   meshChangeset: Changeset<MeshSpec>;
   pipelines: PipelineSet;
   primitiveContext: PrimitiveContext;
   programs: ShaderProgramSet;
   transformNodes: TransformNode[];
-  transformNodeChangeset: Changeset<TransformNode>;
+  transformNodeChangeset: Changeset<TransformNodeSpec>;
 }
 
 interface Changeset<T> {
@@ -128,16 +130,17 @@ interface ShaderProgramSet {
   visualizeNormal: ShaderProgram;
 }
 
-interface Transform {
-  orientation: Rotor3;
-  position: Point3;
-  scale: Vector3;
-}
-
 interface TransformNode {
   children: TransformNode[];
   object: MeshObject;
   parent: TransformNode;
+  transform: Transform;
+}
+
+interface TransformNodeSpec {
+  children: TransformNodeSpec[];
+  objectIndex: number;
+  parent: TransformNodeSpec;
   transform: Transform;
 }
 
@@ -161,6 +164,7 @@ export const createApp = (
     canvasSize: initialCanvasSize,
     context,
     input: createInputState(keyMappings),
+    meshes: [],
     meshChangeset: createChangeset(),
     pipelines: createPipelineSet(context, programs),
     primitiveContext: createPrimitiveContext(),
@@ -180,18 +184,20 @@ export const handleResize = (event: UIEvent, app: App): any => {
 
 export const updateFrame = (app: App) => {
   const {
-    buffers,
     camera,
     context,
     input,
     pipelines,
     primitiveContext,
     programs,
+    transformNodes,
   } = app;
 
   updateInput(input);
   updateCamera(camera, input);
-  updateBufferChangeset(app);
+  const addedBufferStartIndex = updateBufferChangeset(app);
+  const addedMeshStartIndex = updateMeshChangeset(app, addedBufferStartIndex);
+  updateTransformNodeChangeset(app, addedMeshStartIndex);
   resetPrimitives(primitiveContext);
 
   addLineSegment(primitiveContext, {
@@ -307,29 +313,25 @@ export const updateFrame = (app: App) => {
 
   drawPrimitives(app);
 
-  if (buffers.dynamic.length > 1) {
-    const testModel = Matrix4.translation(new Vector3([-2, 2, 1]));
-    const testModelView = Matrix4.multiply(view, testModel);
-    const testModelViewProjection = Matrix4.multiply(projection, testModelView);
+  transformNodes.map(getModelTransform).forEach((model, index) => {
+    const transformNode = transformNodes[index];
+    const mesh = transformNode.object;
+    const modelView = Matrix4.multiply(view, model);
+    const modelViewProjection = Matrix4.multiply(projection, modelView);
     setUniformMatrix4fv(
       context,
       programs.lit,
       "model",
-      Matrix4.toFloat32Array(Matrix4.transpose(testModel))
+      Matrix4.toFloat32Array(Matrix4.transpose(model))
     );
     setUniformMatrix4fv(
       context,
       programs.lit,
       "model_view_projection",
-      Matrix4.toFloat32Array(Matrix4.transpose(testModelViewProjection))
+      Matrix4.toFloat32Array(Matrix4.transpose(modelViewProjection))
     );
-    draw(context, {
-      indexBuffer: buffers.dynamic[0],
-      indicesCount: 36,
-      startIndex: 0,
-      vertexBuffers: [buffers.dynamic[1]],
-    });
-  }
+    draw(context, mesh);
+  });
 };
 
 const addAxisIndicator = (context: PrimitiveContext) => {
@@ -404,6 +406,29 @@ const createKeyMappings = (): KeyMapping[] => {
       type: KeyMappingType.Axis2d,
     },
   ];
+};
+
+const createMesh = (
+  app: App,
+  spec: MeshSpec,
+  addedBufferStartIndex: number
+): MeshObject => {
+  const { buffers } = app;
+  const {
+    indexBufferIndex,
+    indicesCount,
+    startIndex,
+    vertexBufferIndices,
+  } = spec;
+  const mesh: MeshObject = {
+    indexBuffer: buffers.dynamic[indexBufferIndex + addedBufferStartIndex],
+    indicesCount,
+    startIndex,
+    vertexBuffers: vertexBufferIndices.map(
+      (index) => buffers.dynamic[index + addedBufferStartIndex]
+    ),
+  };
+  return mesh;
 };
 
 const createPipelineSet = (
@@ -559,6 +584,22 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
   };
 };
 
+const createTransformNode = (
+  app: App,
+  spec: TransformNodeSpec,
+  addedMeshStartIndex: number
+): TransformNode => {
+  const { meshes } = app;
+  const { objectIndex, transform } = spec;
+  const transformNode: TransformNode = {
+    children: [],
+    object: meshes[objectIndex + addedMeshStartIndex],
+    parent: null,
+    transform,
+  };
+  return transformNode;
+};
+
 const getAccessorByType = (
   vertexAttributes: Dwn.VertexAttribute[],
   type: Dwn.VertexAttributeType
@@ -567,6 +608,15 @@ const getAccessorByType = (
     (vertexAttribute) => vertexAttribute.type === type
   );
   return attribute.accessor;
+};
+
+const getModelTransform = (transformNode: TransformNode): Matrix4 => {
+  let transform = Matrix4.fromTransform(transformNode.transform);
+  for (let { parent } = transformNode; !!parent; parent = parent.parent) {
+    const parentTransform = Matrix4.fromTransform(parent.transform);
+    transform = Matrix4.multiply(transform, parentTransform);
+  }
+  return transform;
 };
 
 const interleaveAttributes = (
@@ -656,19 +706,9 @@ const interleaveAttributes = (
 };
 
 const loadScenes = async (app: App) => {
-  const { bufferChangeset, meshChangeset } = app;
+  const { bufferChangeset, meshChangeset, transformNodeChangeset } = app;
   const fileContent = await getBinaryFile(testDwn);
   const scene = Dwn.deserialize(fileContent);
-
-  const addedMeshes = scene.meshes.map((mesh, meshIndex) => {
-    const meshSpec: MeshSpec = {
-      indexBufferIndex: 2 * meshIndex,
-      indicesCount: Dwn.getElementCount(mesh.indexAccessor),
-      startIndex: 0,
-      vertexBufferIndices: [2 * meshIndex + 1],
-    };
-    return meshSpec;
-  });
 
   const addedBuffers = flatMap(scene.meshes, (mesh) => {
     const indexBufferContent = mesh.indexAccessor.buffer;
@@ -692,16 +732,95 @@ const loadScenes = async (app: App) => {
     return [indexBuffer, vertexBuffer];
   });
 
+  const addedMeshIndexByMesh = new Map<Dwn.Mesh, number>();
+
+  const addedMeshes = scene.meshes.map((mesh, meshIndex) => {
+    const meshSpec: MeshSpec = {
+      indexBufferIndex: 2 * meshIndex,
+      indicesCount: Dwn.getElementCount(mesh.indexAccessor),
+      startIndex: 0,
+      vertexBufferIndices: [2 * meshIndex + 1],
+    };
+    addedMeshIndexByMesh.set(mesh, meshIndex);
+    return meshSpec;
+  });
+
+  const addedTransformNodeByTransformNode = new Map<
+    Dwn.TransformNode,
+    TransformNodeSpec
+  >();
+
+  const addedTransformNodes = scene.transformNodes.map((transformNode) => {
+    const { object, transform } = transformNode;
+    const spec: TransformNodeSpec = {
+      children: [],
+      objectIndex: addedMeshIndexByMesh.get(object.mesh),
+      parent: null,
+      transform,
+    };
+    addedTransformNodeByTransformNode.set(transformNode, spec);
+    return spec;
+  });
+  addedTransformNodes.forEach((transformNode, index) => {
+    const spec = scene.transformNodes[index];
+    const { children, parent } = spec;
+    transformNode.children = children.map(
+      addedTransformNodeByTransformNode.get
+    );
+    transformNode.parent = addedTransformNodeByTransformNode.get(parent);
+  });
+
   bufferChangeset.added = addedBuffers;
   meshChangeset.added = addedMeshes;
+  transformNodeChangeset.added = addedTransformNodes;
 };
 
-const updateBufferChangeset = (app: App) => {
+const updateBufferChangeset = (app: App): number => {
   const { buffers, bufferChangeset, context } = app;
   const addedBuffers = bufferChangeset.added;
   bufferChangeset.added = [];
   const newBuffers = addedBuffers.map((spec) => createBuffer(context, spec));
+  const addedBufferStartIndex = buffers.dynamic.length;
   buffers.dynamic = buffers.dynamic.concat(newBuffers);
+  return addedBufferStartIndex;
+};
+
+const updateMeshChangeset = (
+  app: App,
+  addedBufferStartIndex: number
+): number => {
+  const { meshes, meshChangeset } = app;
+  const addedMeshes = meshChangeset.added;
+  meshChangeset.added = [];
+  const newMeshes = addedMeshes.map((spec) =>
+    createMesh(app, spec, addedBufferStartIndex)
+  );
+  const addedMeshStartIndex = meshes.length;
+  app.meshes = meshes.concat(newMeshes);
+  return addedMeshStartIndex;
+};
+
+const updateTransformNodeChangeset = (
+  app: App,
+  addedMeshStartIndex: number
+) => {
+  const { transformNodes, transformNodeChangeset } = app;
+  const addedTransformNodes = transformNodeChangeset.added;
+  transformNodeChangeset.added = [];
+
+  const addedNodesBySpec = new Map<TransformNodeSpec, TransformNode>();
+  const newTransformNodes = addedTransformNodes.map((spec) => {
+    const transformNode = createTransformNode(app, spec, addedMeshStartIndex);
+    addedNodesBySpec.set(spec, transformNode);
+    return transformNode;
+  });
+  newTransformNodes.forEach((transformNode, index) => {
+    const spec = addedTransformNodes[index];
+    transformNode.children = spec.children.map(addedNodesBySpec.get);
+    transformNode.parent = addedNodesBySpec.get(spec.parent);
+  });
+
+  app.transformNodes = transformNodes.concat(newTransformNodes);
 };
 
 const updateCamera = (camera: Camera, input: InputState) => {
