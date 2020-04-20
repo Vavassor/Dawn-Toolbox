@@ -133,14 +133,14 @@ interface ShaderProgramSet {
 interface TransformNode {
   children: TransformNode[];
   object: MeshObject;
-  parent: TransformNode;
+  parent: TransformNode | null;
   transform: Transform;
 }
 
 interface TransformNodeSpec {
   children: TransformNodeSpec[];
   objectIndex: number;
-  parent: TransformNodeSpec;
+  parent: TransformNodeSpec | null;
   transform: Transform;
 }
 
@@ -765,9 +765,12 @@ const loadScenes = async (app: App) => {
     const spec = scene.transformNodes[index];
     const { children, parent } = spec;
     transformNode.children = children.map(
-      addedTransformNodeByTransformNode.get
+      addedTransformNodeByTransformNode.get,
+      addedTransformNodeByTransformNode
     );
-    transformNode.parent = addedTransformNodeByTransformNode.get(parent);
+    transformNode.parent = parent
+      ? addedTransformNodeByTransformNode.get(parent)
+      : null;
   });
 
   bufferChangeset.added = addedBuffers;
@@ -816,8 +819,12 @@ const updateTransformNodeChangeset = (
   });
   newTransformNodes.forEach((transformNode, index) => {
     const spec = addedTransformNodes[index];
-    transformNode.children = spec.children.map(addedNodesBySpec.get);
-    transformNode.parent = addedNodesBySpec.get(spec.parent);
+    const { children, parent } = spec;
+    transformNode.children = children.map(
+      addedNodesBySpec.get,
+      addedNodesBySpec
+    );
+    transformNode.parent = parent ? addedNodesBySpec.get(parent) : null;
   });
 
   app.transformNodes = transformNodes.concat(newTransformNodes);

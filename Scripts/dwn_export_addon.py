@@ -263,11 +263,13 @@ class Transform:
 
 
 class TransformNode:
-    def __init__(self, children: List[Object],
-                 obj: Object, transform: Transform):
-        self.children = children
+    def __init__(self, obj: Object, transform: Transform):
+        self.children = []
         self.object = obj
         self.transform = transform
+
+    def set_children(self, children: List["TransformNode"]):
+        self.children = children
 
 
 class Scene:
@@ -380,14 +382,22 @@ def add_object(scene: Scene, obj: BpyObject) -> Object:
 
 
 def add_transform_nodes(scene: Scene, objects: List[BpyObject]):
-    children_by_parent = get_all_children_by_parent(objects)
+    transform_nodes_by_object = dict()
+    bpy_objects_by_object = dict()
     for obj in objects:
         content = add_object(scene, obj)
+        bpy_objects_by_object[content] = obj
         transform_node = TransformNode(
-            children=children_by_parent.get(obj, []),
-            obj=content,
-            transform=get_transform(obj))
+            obj=content, transform=get_transform(obj))
+        transform_nodes_by_object[obj] = transform_node
         scene.add_transform_node(transform_node)
+    children_by_parent = get_all_children_by_parent(objects)
+    for transform_node in scene.transform_nodes:
+        parent = bpy_objects_by_object[transform_node.object]
+        child_objects = children_by_parent.get(parent, [])
+        children = [transform_nodes_by_object[child]
+                    for child in child_objects]
+        transform_node.set_children(children)
 
 
 def get_accessor_chunk(scene: Scene) -> bytearray:
@@ -446,7 +456,7 @@ def get_transform_node_chunk(scene: Scene) -> bytearray:
         write_uint16(chunk, scene.objects.index(transform_node.object))
         write_uint16(chunk, len(transform_node.children))
         for child in transform_node.children:
-            write_uint16(chunk, scene.objects.index(child))
+            write_uint16(chunk, scene.transform_nodes.index(child))
     return chunk
 
 

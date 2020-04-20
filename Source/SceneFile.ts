@@ -485,7 +485,7 @@ const readMeshChunk = (
   reader: BinaryReader,
   chunkHeader: ChunkHeader
 ): MeshSpec[] => {
-  const bytesPerMesh = 12;
+  const bytesPerMesh = 6;
   const meshCount = chunkHeader.byteCount / bytesPerMesh;
 
   const meshes = times(meshCount, () => readMeshSpec(reader));
@@ -509,7 +509,7 @@ const readObjectChunk = (
   reader: BinaryReader,
   chunkHeader: ChunkHeader
 ): ObjectSpec[] => {
-  const bytesPerObject = 4;
+  const bytesPerObject = 3;
   const objectCount = chunkHeader.byteCount / bytesPerObject;
 
   expect(objectCount > 0, "Object count must be nonzero.");
