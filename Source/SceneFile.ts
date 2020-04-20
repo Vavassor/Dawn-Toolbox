@@ -14,8 +14,8 @@ import {
   readUint8,
   skipBytes,
 } from "./BinaryReader";
-import { Bivector3 } from "./Geometry/Bivector3";
 import { Point3 } from "./Geometry/Point3";
+import { Quaternion } from "./Geometry/Quaternion";
 import { Rotor3 } from "./Geometry/Rotor3";
 import { Vector3 } from "./Geometry/Vector3";
 import { TraceError } from "./TraceError";
@@ -103,7 +103,7 @@ export enum ObjectType {
 export interface Scene {
   buffers: ArrayBuffer[];
   meshes: Mesh[];
-  rootTransformNode: TransformNode | null;
+  rootTransformNodes: TransformNode[];
   transformNodes: TransformNode[];
 }
 
@@ -191,28 +191,32 @@ export const deserialize = (sourceData: ArrayBuffer): Scene => {
     }
   }
 
-  const accessors = accessorSpecs.map(spec => createAccessor(spec, buffers));
-  const vertexLayouts = vertexLayoutSpecs.map(spec =>
+  const accessors = accessorSpecs.map((spec) => createAccessor(spec, buffers));
+  const vertexLayouts = vertexLayoutSpecs.map((spec) =>
     createVertexLayout(spec, accessors)
   );
-  const meshes = meshSpecs.map(spec =>
+  const meshes = meshSpecs.map((spec) =>
     createMesh(spec, vertexLayouts, accessors)
   );
-  const objects = objectSpecs.map(spec => createObject(spec, meshes));
-  const transformNodes = transformNodeSpecs.map(spec =>
+  const objects = objectSpecs.map((spec) => createObject(spec, meshes));
+  const transformNodes = transformNodeSpecs.map((spec) =>
     createTransformNodeWithoutChildren(spec, objects)
   );
+
   resolveTransformNodeConnections(transformNodeSpecs, transformNodes);
+  const rootTransformNodes = transformNodes.filter(
+    (transformNode) => !transformNode.parent
+  );
 
   return {
     buffers,
     meshes,
-    rootTransformNode: transformNodes[0],
+    rootTransformNodes,
     transformNodes,
   };
 };
 
-export const getVertexCount = (accessor: Accessor): number => {
+export const getElementCount = (accessor: Accessor): number => {
   const { byteCount, byteStride } = accessor;
   return byteCount / byteStride;
 };
@@ -330,34 +334,13 @@ const createVertexLayout = (
   spec: VertexLayoutSpec,
   accessors: Accessor[]
 ): VertexLayout => {
-  const vertexAttributes = spec.vertexAttributes.map(vertexAttributeSpec =>
+  const vertexAttributes = spec.vertexAttributes.map((vertexAttributeSpec) =>
     createVertexAttribute(vertexAttributeSpec, accessors)
   );
 
   return {
     vertexAttributes,
   };
-};
-
-const getBytesPerComponent = (type: ComponentType): number => {
-  switch (type) {
-    case ComponentType.Float32:
-      return 4;
-    case ComponentType.Int8:
-      return 1;
-    case ComponentType.Int16:
-      return 2;
-    case ComponentType.Int32:
-      return 4;
-    case ComponentType.Uint8:
-      return 1;
-    case ComponentType.Uint16:
-      return 2;
-    case ComponentType.Uint32:
-      return 4;
-    default:
-      return 0;
-  }
 };
 
 const isComponentType = (type: number): boolean => {
@@ -502,7 +485,7 @@ const readMeshChunk = (
   reader: BinaryReader,
   chunkHeader: ChunkHeader
 ): MeshSpec[] => {
-  const bytesPerMesh = 12;
+  const bytesPerMesh = 6;
   const meshCount = chunkHeader.byteCount / bytesPerMesh;
 
   const meshes = times(meshCount, () => readMeshSpec(reader));
@@ -526,7 +509,7 @@ const readObjectChunk = (
   reader: BinaryReader,
   chunkHeader: ChunkHeader
 ): ObjectSpec[] => {
-  const bytesPerObject = 4;
+  const bytesPerObject = 3;
   const objectCount = chunkHeader.byteCount / bytesPerObject;
 
   expect(objectCount > 0, "Object count must be nonzero.");
@@ -569,10 +552,7 @@ const readTransformNodeSpec = (reader: BinaryReader): TransformNodeSpec => {
   const childIndices = readUint16Array(reader, childIndexCount);
 
   const transform: Transform = {
-    orientation: new Rotor3(
-      orientationValues[0],
-      new Bivector3(orientationValues.slice(1))
-    ),
+    orientation: Rotor3.fromQuaternion(new Quaternion(orientationValues)),
     position: new Point3(positionValues),
     scale: new Vector3(scaleValues),
   };
@@ -632,7 +612,7 @@ const resolveTransformNodeConnections = (
   for (let i = 0; i < transformNodes.length; i++) {
     const spec = specs[i];
     const transformNode = transformNodes[i];
-    transformNode.children = spec.childIndices.map(childIndex => {
+    transformNode.children = spec.childIndices.map((childIndex) => {
       expectIndexInBounds(
         childIndex,
         transformNodes,

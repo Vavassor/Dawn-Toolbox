@@ -1,4 +1,5 @@
-import { flattenOnce } from "./Array";
+import { flatMap } from "./Array";
+import { Camera, getProjection, getView } from "./Camera";
 import { clamp } from "./Clamp";
 import { Color } from "./Color";
 import { COLORS } from "./Colors";
@@ -62,42 +63,33 @@ import {
   ShaderProgram,
 } from "./WebGL/ShaderProgram";
 import { setViewport } from "./WebGL/Viewport";
+import { Transform } from "./Geometry/Transform";
 
 export interface App {
   buffers: BufferSet;
-  bufferChangeSet: BufferChangeSet;
+  bufferChangeset: Changeset<BufferSpec>;
   camera: Camera;
   canvasSize: Size2;
   context: GloContext;
   handleMouseMove?: HandleMouseMove;
   input: InputState;
+  meshes: MeshObject[];
+  meshChangeset: Changeset<MeshSpec>;
   pipelines: PipelineSet;
   primitiveContext: PrimitiveContext;
   programs: ShaderProgramSet;
   transformNodes: TransformNode[];
-  transformNodeChangeSet: TransformNodeChangeSet;
+  transformNodeChangeset: Changeset<TransformNodeSpec>;
 }
 
-interface BufferChangeSet {
-  added: BufferSpec[];
+interface Changeset<T> {
+  added: T[];
 }
 
 interface BufferSet {
   dynamic: GloBuffer[];
   primitiveIndex: GloBuffer;
   primitiveVertex: GloBuffer;
-  test: GloBuffer;
-}
-
-interface BufferWithFormat {
-  content: ArrayBuffer;
-  format: BufferFormat;
-}
-
-interface Camera {
-  pitch: number;
-  position: Point3;
-  yaw: number;
 }
 
 interface DirectionalLight {
@@ -107,12 +99,23 @@ interface DirectionalLight {
 
 export type HandleMouseMove = (event: MouseEvent) => void;
 
-interface MeshObject {}
+interface MeshObject {
+  indexBuffer: GloBuffer;
+  indicesCount: number;
+  startIndex: number;
+  vertexBuffers: GloBuffer[];
+}
+
+interface MeshSpec {
+  indexBufferIndex: number;
+  indicesCount: number;
+  startIndex: number;
+  vertexBufferIndices: number[];
+}
 
 interface PipelineSet {
   line: Pipeline;
   surface: Pipeline;
-  test: Pipeline;
   visualizeNormal: Pipeline;
 }
 
@@ -127,21 +130,18 @@ interface ShaderProgramSet {
   visualizeNormal: ShaderProgram;
 }
 
-interface Transform {
-  orientation: Rotor3;
-  position: Point3;
-  scale: Vector3;
-}
-
 interface TransformNode {
   children: TransformNode[];
   object: MeshObject;
-  parent: TransformNode;
+  parent: TransformNode | null;
   transform: Transform;
 }
 
-interface TransformNodeChangeSet {
-  added: TransformNode[];
+interface TransformNodeSpec {
+  children: TransformNodeSpec[];
+  objectIndex: number;
+  parent: TransformNodeSpec | null;
+  transform: Transform;
 }
 
 export const createApp = (
@@ -152,20 +152,25 @@ export const createApp = (
   const programs = createShaderProgramSet(context);
   const app: App = {
     buffers: createBufferSet(context),
-    bufferChangeSet: createBufferChangeSet(),
+    bufferChangeset: createChangeset(),
     camera: {
+      farClipPlane: 100,
+      nearClipPlane: 0.001,
       pitch: 0,
       position: new Point3([0, 0, 1]),
+      verticalFieldOfView: Math.PI / 2,
       yaw: 0,
     },
     canvasSize: initialCanvasSize,
     context,
     input: createInputState(keyMappings),
+    meshes: [],
+    meshChangeset: createChangeset(),
     pipelines: createPipelineSet(context, programs),
     primitiveContext: createPrimitiveContext(),
     programs,
     transformNodes: [],
-    transformNodeChangeSet: createTransformNodeChangeSet(),
+    transformNodeChangeset: createChangeset(),
   };
   loadScenes(app);
   return app;
@@ -177,29 +182,180 @@ export const handleResize = (event: UIEvent, app: App): any => {
   console.log(`resize event: ${width}x${height}`);
 };
 
-const createBufferSet = (context: GloContext): BufferSet => {
-  const arrayBuffer = new ArrayBuffer(16 * 3);
-  const floatView = new Float32Array(arrayBuffer);
-  const uint32View = new Uint32Array(arrayBuffer);
-  floatView[0] = 0;
-  floatView[1] = 0.5;
-  floatView[2] = 0;
-  uint32View[3] = 0xff0000ff;
-  floatView[4] = -0.5;
-  floatView[5] = -0.5;
-  floatView[6] = 0;
-  uint32View[7] = 0xff00ff00;
-  floatView[8] = 0.5;
-  floatView[9] = -0.5;
-  floatView[10] = 0;
-  uint32View[11] = 0xffff0000;
+export const updateFrame = (app: App) => {
+  const {
+    camera,
+    context,
+    input,
+    pipelines,
+    primitiveContext,
+    programs,
+    transformNodes,
+  } = app;
 
-  const test = createBuffer(context, {
-    content: arrayBuffer,
-    format: BufferFormat.VertexBuffer,
-    usage: BufferUsage.Static,
+  updateInput(input);
+  updateCamera(camera, input);
+  const addedBufferStartIndex = updateBufferChangeset(app);
+  const addedMeshStartIndex = updateMeshChangeset(app, addedBufferStartIndex);
+  updateTransformNodeChangeset(app, addedMeshStartIndex);
+  resetPrimitives(primitiveContext);
+
+  addLineSegment(primitiveContext, {
+    endpoints: [new Point3([1, 0, -1]), new Point3([0, 1, 1])],
+    style: { color: COLORS.white },
+  });
+  addAxisIndicator(primitiveContext);
+  addSphere(primitiveContext, {
+    center: new Point3([2, 2, 1]),
+    radius: 1,
+    style: { color: COLORS.white },
+  });
+  addSphere(primitiveContext, {
+    center: new Point3([-2, 2, 0]),
+    radius: 0.5,
+    style: { color: COLORS.white },
+  });
+  addCuboid(primitiveContext, {
+    center: new Point3([0, -3, 0.5]),
+    orientation: Rotor3.fromAngleAndPlane(Math.PI / 3, Bivector3.unitXZ()),
+    size: { width: 1, height: 0.5, depth: 2 },
+    style: { color: COLORS.white },
+  });
+  addCuboid(primitiveContext, {
+    center: new Point3([2, -2, 1]),
+    size: { width: 1, height: 1, depth: 1 },
+    style: { color: COLORS.white },
+  });
+  addCuboid(primitiveContext, {
+    center: new Point3([0, 0, -0.5]),
+    size: { width: 10, height: 0.1, depth: 10 },
+    style: { color: COLORS.white },
   });
 
+  clearTarget(context, {
+    color: {
+      shouldClear: true,
+      value: Color.opaqueBlack(),
+    },
+  });
+
+  setViewport(context, {
+    bottomLeftX: 0,
+    bottomLeftY: 0,
+    farPlane: 1,
+    height: app.canvasSize.height,
+    nearPlane: 0,
+    width: app.canvasSize.width,
+  });
+
+  const model = Matrix4.identity();
+  const view = getView(camera);
+  const projection = getProjection(
+    camera,
+    app.canvasSize.width,
+    app.canvasSize.height
+  );
+  const modelView = Matrix4.multiply(view, model);
+  const modelViewProjection = Matrix4.multiply(projection, modelView);
+  const lightDirection = new Vector3([-0.5345, -0.8018, -0.2673]);
+  const directionalLight: DirectionalLight = {
+    direction: lightDirection,
+    radiance: new Vector3([1, 1, 1]),
+  };
+  const pointLight: PointLight = {
+    position: new Point3([1, -1, 1]),
+    radiance: new Vector3([1, 1, 1]),
+  };
+
+  setPipeline(context, pipelines.surface);
+  setUniform3fv(
+    context,
+    programs.lit,
+    "directional_light.direction",
+    Vector3.toFloat32Array(directionalLight.direction)
+  );
+  setUniform3fv(
+    context,
+    programs.lit,
+    "directional_light.radiance",
+    Vector3.toFloat32Array(directionalLight.radiance)
+  );
+  setUniform3fv(
+    context,
+    programs.lit,
+    "point_light.position",
+    Point3.toFloat32Array(pointLight.position)
+  );
+  setUniform3fv(
+    context,
+    programs.lit,
+    "point_light.radiance",
+    Vector3.toFloat32Array(pointLight.radiance)
+  );
+  setUniformMatrix4fv(
+    context,
+    programs.lit,
+    "model",
+    Matrix4.toFloat32Array(Matrix4.transpose(model))
+  );
+  setUniformMatrix4fv(
+    context,
+    programs.lit,
+    "model_view_projection",
+    Matrix4.toFloat32Array(Matrix4.transpose(modelViewProjection))
+  );
+  setUniform3fv(
+    context,
+    programs.lit,
+    "view_position",
+    Point3.toFloat32Array(camera.position)
+  );
+
+  drawPrimitives(app);
+
+  transformNodes
+    .map((transformNode) => Matrix4.fromTransform(transformNode.transform))
+    .forEach((model, index) => {
+      const transformNode = transformNodes[index];
+      const mesh = transformNode.object;
+      const modelView = Matrix4.multiply(view, model);
+      const modelViewProjection = Matrix4.multiply(projection, modelView);
+      setUniformMatrix4fv(
+        context,
+        programs.lit,
+        "model",
+        Matrix4.toFloat32Array(Matrix4.transpose(model))
+      );
+      setUniformMatrix4fv(
+        context,
+        programs.lit,
+        "model_view_projection",
+        Matrix4.toFloat32Array(Matrix4.transpose(modelViewProjection))
+      );
+      draw(context, mesh);
+    });
+};
+
+const addAxisIndicator = (context: PrimitiveContext) => {
+  const origin = Point3.zero();
+  const xAxis = Point3.fromVector3(Vector3.unitX());
+  const yAxis = Point3.fromVector3(Vector3.unitY());
+  const zAxis = Point3.fromVector3(Vector3.unitZ());
+  addLineSegment(context, {
+    endpoints: [origin, xAxis],
+    style: { color: COLORS.orange },
+  });
+  addLineSegment(context, {
+    endpoints: [origin, yAxis],
+    style: { color: COLORS.lightGreen },
+  });
+  addLineSegment(context, {
+    endpoints: [origin, zAxis],
+    style: { color: COLORS.blue },
+  });
+};
+
+const createBufferSet = (context: GloContext): BufferSet => {
   const primitiveIndex = createBuffer(context, {
     byteCount: PRIMITIVE_BATCH_CAP_IN_BYTES,
     format: BufferFormat.IndexBuffer,
@@ -216,9 +372,14 @@ const createBufferSet = (context: GloContext): BufferSet => {
     dynamic: [],
     primitiveVertex,
     primitiveIndex,
-    test,
   };
 };
+
+function createChangeset<T>(): Changeset<T> {
+  return {
+    added: [],
+  };
+}
 
 const createKeyMappings = (): KeyMapping[] => {
   return [
@@ -247,6 +408,29 @@ const createKeyMappings = (): KeyMapping[] => {
       type: KeyMappingType.Axis2d,
     },
   ];
+};
+
+const createMesh = (
+  app: App,
+  spec: MeshSpec,
+  addedBufferStartIndex: number
+): MeshObject => {
+  const { buffers } = app;
+  const {
+    indexBufferIndex,
+    indicesCount,
+    startIndex,
+    vertexBufferIndices,
+  } = spec;
+  const mesh: MeshObject = {
+    indexBuffer: buffers.dynamic[indexBufferIndex + addedBufferStartIndex],
+    indicesCount,
+    startIndex,
+    vertexBuffers: vertexBufferIndices.map(
+      (index) => buffers.dynamic[index + addedBufferStartIndex]
+    ),
+  };
+  return mesh;
 };
 
 const createPipelineSet = (
@@ -292,25 +476,6 @@ const createPipelineSet = (
     },
   });
 
-  const test = createPipeline(context, {
-    depthStencil: {
-      shouldCompareDepth: true,
-      shouldWriteDepth: true,
-      shouldUseStencil: false,
-    },
-    inputAssembly: {
-      indexType: "NONE",
-      primitiveTopology: "TRIANGLE_LIST",
-    },
-    shader: programs.basic,
-    vertexLayout: {
-      attributes: [
-        { bufferIndex: 0, format: "FLOAT3", name: "vertex_position" },
-        { bufferIndex: 0, format: "UBYTE4_NORM", name: "vertex_color" },
-      ],
-    },
-  });
-
   const visualizeNormal = createPipeline(context, {
     depthStencil: {
       shouldCompareDepth: true,
@@ -334,7 +499,6 @@ const createPipelineSet = (
   return {
     line,
     surface,
-    test,
     visualizeNormal,
   };
 };
@@ -422,10 +586,20 @@ const createShaderProgramSet = (context: GloContext): ShaderProgramSet => {
   };
 };
 
-const createTransformNodeChangeSet = (): TransformNodeChangeSet => {
-  return {
-    added: [],
+const createTransformNode = (
+  app: App,
+  spec: TransformNodeSpec,
+  addedMeshStartIndex: number
+): TransformNode => {
+  const { meshes } = app;
+  const { objectIndex, transform } = spec;
+  const transformNode: TransformNode = {
+    children: [],
+    object: meshes[objectIndex + addedMeshStartIndex],
+    parent: null,
+    transform,
   };
+  return transformNode;
 };
 
 const getAccessorByType = (
@@ -433,25 +607,9 @@ const getAccessorByType = (
   type: Dwn.VertexAttributeType
 ): Dwn.Accessor => {
   const attribute = vertexAttributes.find(
-    vertexAttribute => vertexAttribute.type === type
+    (vertexAttribute) => vertexAttribute.type === type
   );
   return attribute.accessor;
-};
-
-const getBufferWithFormats = (scene: Dwn.Scene): BufferWithFormat[] => {
-  return flattenOnce(
-    scene.meshes.map(mesh => {
-      const indexBuffer: BufferWithFormat = {
-        content: mesh.indexAccessor.buffer,
-        format: BufferFormat.IndexBuffer,
-      };
-      const vertexBuffer: BufferWithFormat = {
-        content: interleaveAttributes(mesh.vertexLayout.vertexAttributes),
-        format: BufferFormat.VertexBuffer,
-      };
-      return [indexBuffer, vertexBuffer];
-    })
-  );
 };
 
 const interleaveAttributes = (
@@ -467,7 +625,7 @@ const interleaveAttributes = (
     "SBYTE4_NORM",
     "UBYTE4_NORM",
   ];
-  const accessors = types.map(type => getAccessorByType(attributes, type));
+  const accessors = types.map((type) => getAccessorByType(attributes, type));
   const targetByteStride = targetVertexFormats.reduce(
     (byteStride, vertexFormat) => {
       const bytesPerAttribute = getVertexFormatSize(vertexFormat);
@@ -475,7 +633,7 @@ const interleaveAttributes = (
     },
     0
   );
-  const vertexCount = Dwn.getVertexCount(accessors[0]);
+  const vertexCount = Dwn.getElementCount(accessors[0]);
   const vertices = new ArrayBuffer(targetByteStride * vertexCount);
 
   for (let i = 0; i < vertexCount; i++) {
@@ -541,223 +699,128 @@ const interleaveAttributes = (
 };
 
 const loadScenes = async (app: App) => {
-  const { bufferChangeSet } = app;
+  const { bufferChangeset, meshChangeset, transformNodeChangeset } = app;
   const fileContent = await getBinaryFile(testDwn);
   const scene = Dwn.deserialize(fileContent);
-  const bufferWithFormats = getBufferWithFormats(scene);
-  bufferChangeSet.added = bufferWithFormats.map(buffer => {
-    return {
-      byteCount: buffer.content.byteLength,
-      content: buffer.content,
-      format: buffer.format,
+
+  const addedBuffers = flatMap(scene.meshes, (mesh) => {
+    const indexBufferContent = mesh.indexAccessor.buffer;
+    const indexBuffer: BufferSpec = {
+      byteCount: indexBufferContent.byteLength,
+      content: indexBufferContent,
+      format: BufferFormat.IndexBuffer,
       usage: BufferUsage.Static,
     };
-  });
-};
 
-export const updateFrame = (app: App) => {
-  const {
-    buffers,
-    camera,
-    context,
-    input,
-    pipelines,
-    primitiveContext,
-    programs,
-  } = app;
-
-  updateInput(input);
-  updateCamera(camera, input);
-  updateBufferChangeSet(app);
-  resetPrimitives(primitiveContext);
-
-  addLineSegment(primitiveContext, {
-    endpoints: [new Point3([1, 0, -1]), new Point3([0, 1, 1])],
-    style: { color: COLORS.white },
-  });
-  addAxisIndicator(primitiveContext);
-  addSphere(primitiveContext, {
-    center: new Point3([2, 2, 1]),
-    radius: 1,
-    style: { color: COLORS.white },
-  });
-  addSphere(primitiveContext, {
-    center: new Point3([-2, 2, 0]),
-    radius: 0.5,
-    style: { color: COLORS.white },
-  });
-  addCuboid(primitiveContext, {
-    center: new Point3([0, -3, 0.5]),
-    orientation: Rotor3.fromAngleAndPlane(Math.PI / 3, Bivector3.unitXZ()),
-    size: { width: 1, height: 0.5, depth: 2 },
-    style: { color: COLORS.white },
-  });
-  addCuboid(primitiveContext, {
-    center: new Point3([2, -2, 1]),
-    size: { width: 1, height: 1, depth: 1 },
-    style: { color: COLORS.white },
-  });
-  addCuboid(primitiveContext, {
-    center: new Point3([0, 0, -0.5]),
-    size: { width: 10, height: 0.1, depth: 10 },
-    style: { color: COLORS.white },
-  });
-
-  clearTarget(context, {
-    color: {
-      shouldClear: true,
-      value: Color.opaqueBlack(),
-    },
-  });
-
-  setViewport(context, {
-    bottomLeftX: 0,
-    bottomLeftY: 0,
-    farPlane: 1,
-    height: app.canvasSize.height,
-    nearPlane: 0,
-    width: app.canvasSize.width,
-  });
-
-  setPipeline(context, pipelines.test);
-
-  const { position, pitch, yaw } = camera;
-  const model = Matrix4.identity();
-  const view = Matrix4.turnRh(position, yaw, pitch, Vector3.unitZ());
-  const projection = Matrix4.perspective(
-    Math.PI / 2,
-    app.canvasSize.width,
-    app.canvasSize.height,
-    0.001,
-    100
-  );
-  const modelView = Matrix4.multiply(view, model);
-  const modelViewProjection = Matrix4.multiply(projection, modelView);
-  const lightDirection = new Vector3([-0.5345, -0.8018, -0.2673]);
-  const directionalLight: DirectionalLight = {
-    direction: lightDirection,
-    radiance: new Vector3([1, 1, 1]),
-  };
-  const pointLight: PointLight = {
-    position: new Point3([1, -1, 1]),
-    radiance: new Vector3([1, 1, 1]),
-  };
-
-  setUniformMatrix4fv(
-    context,
-    programs.basic,
-    "model_view_projection",
-    Matrix4.toFloat32Array(Matrix4.transpose(modelViewProjection))
-  );
-
-  draw(context, {
-    indicesCount: 3,
-    startIndex: 0,
-    vertexBuffers: [buffers.test],
-  });
-
-  setPipeline(context, pipelines.surface);
-  setUniform3fv(
-    context,
-    programs.lit,
-    "directional_light.direction",
-    Vector3.toFloat32Array(directionalLight.direction)
-  );
-  setUniform3fv(
-    context,
-    programs.lit,
-    "directional_light.radiance",
-    Vector3.toFloat32Array(directionalLight.radiance)
-  );
-  setUniform3fv(
-    context,
-    programs.lit,
-    "point_light.position",
-    Point3.toFloat32Array(pointLight.position)
-  );
-  setUniform3fv(
-    context,
-    programs.lit,
-    "point_light.radiance",
-    Vector3.toFloat32Array(pointLight.radiance)
-  );
-  setUniformMatrix4fv(
-    context,
-    programs.lit,
-    "model",
-    Matrix4.toFloat32Array(Matrix4.transpose(model))
-  );
-  setUniformMatrix4fv(
-    context,
-    programs.lit,
-    "model_view_projection",
-    Matrix4.toFloat32Array(Matrix4.transpose(modelViewProjection))
-  );
-  setUniform3fv(
-    context,
-    programs.lit,
-    "view_position",
-    Point3.toFloat32Array(camera.position)
-  );
-
-  drawPrimitives(app);
-
-  if (buffers.dynamic.length > 1) {
-    const testModel = Matrix4.translation(new Vector3([-2, 2, 1]));
-    const testModelView = Matrix4.multiply(view, testModel);
-    const testModelViewProjection = Matrix4.multiply(projection, testModelView);
-    setUniformMatrix4fv(
-      context,
-      programs.lit,
-      "model",
-      Matrix4.toFloat32Array(Matrix4.transpose(testModel))
+    const vertexBufferContent = interleaveAttributes(
+      mesh.vertexLayout.vertexAttributes
     );
-    setUniformMatrix4fv(
-      context,
-      programs.lit,
-      "model_view_projection",
-      Matrix4.toFloat32Array(Matrix4.transpose(testModelViewProjection))
-    );
-    draw(context, {
-      indexBuffer: buffers.dynamic[0],
-      indicesCount: 36,
+    const vertexBuffer: BufferSpec = {
+      byteCount: vertexBufferContent.byteLength,
+      content: vertexBufferContent,
+      format: BufferFormat.VertexBuffer,
+      usage: BufferUsage.Static,
+    };
+
+    return [indexBuffer, vertexBuffer];
+  });
+
+  const addedMeshIndexByMesh = new Map<Dwn.Mesh, number>();
+
+  const addedMeshes = scene.meshes.map((mesh, meshIndex) => {
+    const meshSpec: MeshSpec = {
+      indexBufferIndex: 2 * meshIndex,
+      indicesCount: Dwn.getElementCount(mesh.indexAccessor),
       startIndex: 0,
-      vertexBuffers: [buffers.dynamic[1]],
-    });
-  }
+      vertexBufferIndices: [2 * meshIndex + 1],
+    };
+    addedMeshIndexByMesh.set(mesh, meshIndex);
+    return meshSpec;
+  });
+
+  const addedTransformNodeByTransformNode = new Map<
+    Dwn.TransformNode,
+    TransformNodeSpec
+  >();
+
+  const addedTransformNodes = scene.transformNodes.map((transformNode) => {
+    const { object, transform } = transformNode;
+    const spec: TransformNodeSpec = {
+      children: [],
+      objectIndex: addedMeshIndexByMesh.get(object.mesh),
+      parent: null,
+      transform,
+    };
+    addedTransformNodeByTransformNode.set(transformNode, spec);
+    return spec;
+  });
+  addedTransformNodes.forEach((transformNode, index) => {
+    const spec = scene.transformNodes[index];
+    const { children, parent } = spec;
+    transformNode.children = children.map(
+      addedTransformNodeByTransformNode.get,
+      addedTransformNodeByTransformNode
+    );
+    transformNode.parent = parent
+      ? addedTransformNodeByTransformNode.get(parent)
+      : null;
+  });
+
+  bufferChangeset.added = addedBuffers;
+  meshChangeset.added = addedMeshes;
+  transformNodeChangeset.added = addedTransformNodes;
 };
 
-const addAxisIndicator = (context: PrimitiveContext) => {
-  const origin = Point3.zero();
-  const xAxis = Point3.fromVector3(Vector3.unitX());
-  const yAxis = Point3.fromVector3(Vector3.unitY());
-  const zAxis = Point3.fromVector3(Vector3.unitZ());
-  addLineSegment(context, {
-    endpoints: [origin, xAxis],
-    style: { color: COLORS.orange },
-  });
-  addLineSegment(context, {
-    endpoints: [origin, yAxis],
-    style: { color: COLORS.lightGreen },
-  });
-  addLineSegment(context, {
-    endpoints: [origin, zAxis],
-    style: { color: COLORS.blue },
-  });
-};
-
-const createBufferChangeSet = (): BufferChangeSet => {
-  return {
-    added: [],
-  };
-};
-
-const updateBufferChangeSet = (app: App) => {
-  const { buffers, bufferChangeSet, context } = app;
-  const addedBuffers = bufferChangeSet.added;
-  bufferChangeSet.added = [];
-  const newBuffers = addedBuffers.map(spec => createBuffer(context, spec));
+const updateBufferChangeset = (app: App): number => {
+  const { buffers, bufferChangeset, context } = app;
+  const addedBuffers = bufferChangeset.added;
+  bufferChangeset.added = [];
+  const newBuffers = addedBuffers.map((spec) => createBuffer(context, spec));
+  const addedBufferStartIndex = buffers.dynamic.length;
   buffers.dynamic = buffers.dynamic.concat(newBuffers);
+  return addedBufferStartIndex;
+};
+
+const updateMeshChangeset = (
+  app: App,
+  addedBufferStartIndex: number
+): number => {
+  const { meshes, meshChangeset } = app;
+  const addedMeshes = meshChangeset.added;
+  meshChangeset.added = [];
+  const newMeshes = addedMeshes.map((spec) =>
+    createMesh(app, spec, addedBufferStartIndex)
+  );
+  const addedMeshStartIndex = meshes.length;
+  app.meshes = meshes.concat(newMeshes);
+  return addedMeshStartIndex;
+};
+
+const updateTransformNodeChangeset = (
+  app: App,
+  addedMeshStartIndex: number
+) => {
+  const { transformNodes, transformNodeChangeset } = app;
+  const addedTransformNodes = transformNodeChangeset.added;
+  transformNodeChangeset.added = [];
+
+  const addedNodesBySpec = new Map<TransformNodeSpec, TransformNode>();
+  const newTransformNodes = addedTransformNodes.map((spec) => {
+    const transformNode = createTransformNode(app, spec, addedMeshStartIndex);
+    addedNodesBySpec.set(spec, transformNode);
+    return transformNode;
+  });
+  newTransformNodes.forEach((transformNode, index) => {
+    const spec = addedTransformNodes[index];
+    const { children, parent } = spec;
+    transformNode.children = children.map(
+      addedNodesBySpec.get,
+      addedNodesBySpec
+    );
+    transformNode.parent = parent ? addedNodesBySpec.get(parent) : null;
+  });
+
+  app.transformNodes = transformNodes.concat(newTransformNodes);
 };
 
 const updateCamera = (camera: Camera, input: InputState) => {

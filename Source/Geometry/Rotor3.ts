@@ -1,6 +1,7 @@
 import { Bivector3 } from "./Bivector3";
 import { Vector3 } from "./Vector3";
 import { wedge } from "./GeometricAlgebra";
+import { Quaternion } from "./Quaternion";
 
 export class Rotor3 {
   a: number;
@@ -25,6 +26,12 @@ export class Rotor3 {
     const halfAngleSin = Math.sin(angle / 2);
     const a = Math.cos(angle / 2);
     const b = Bivector3.multiply(-halfAngleSin, Bivector3.normalize(plane));
+    return new Rotor3(a, b);
+  }
+
+  static fromQuaternion(q: Quaternion): Rotor3 {
+    const a = q.w;
+    const b = new Bivector3([-q.z, q.y, -q.x]);
     return new Rotor3(a, b);
   }
 
