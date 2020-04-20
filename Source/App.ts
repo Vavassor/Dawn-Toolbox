@@ -313,25 +313,27 @@ export const updateFrame = (app: App) => {
 
   drawPrimitives(app);
 
-  transformNodes.map(getModelTransform).forEach((model, index) => {
-    const transformNode = transformNodes[index];
-    const mesh = transformNode.object;
-    const modelView = Matrix4.multiply(view, model);
-    const modelViewProjection = Matrix4.multiply(projection, modelView);
-    setUniformMatrix4fv(
-      context,
-      programs.lit,
-      "model",
-      Matrix4.toFloat32Array(Matrix4.transpose(model))
-    );
-    setUniformMatrix4fv(
-      context,
-      programs.lit,
-      "model_view_projection",
-      Matrix4.toFloat32Array(Matrix4.transpose(modelViewProjection))
-    );
-    draw(context, mesh);
-  });
+  transformNodes
+    .map((transformNode) => Matrix4.fromTransform(transformNode.transform))
+    .forEach((model, index) => {
+      const transformNode = transformNodes[index];
+      const mesh = transformNode.object;
+      const modelView = Matrix4.multiply(view, model);
+      const modelViewProjection = Matrix4.multiply(projection, modelView);
+      setUniformMatrix4fv(
+        context,
+        programs.lit,
+        "model",
+        Matrix4.toFloat32Array(Matrix4.transpose(model))
+      );
+      setUniformMatrix4fv(
+        context,
+        programs.lit,
+        "model_view_projection",
+        Matrix4.toFloat32Array(Matrix4.transpose(modelViewProjection))
+      );
+      draw(context, mesh);
+    });
 };
 
 const addAxisIndicator = (context: PrimitiveContext) => {
@@ -608,15 +610,6 @@ const getAccessorByType = (
     (vertexAttribute) => vertexAttribute.type === type
   );
   return attribute.accessor;
-};
-
-const getModelTransform = (transformNode: TransformNode): Matrix4 => {
-  let transform = Matrix4.fromTransform(transformNode.transform);
-  for (let { parent } = transformNode; !!parent; parent = parent.parent) {
-    const parentTransform = Matrix4.fromTransform(parent.transform);
-    transform = Matrix4.multiply(transform, parentTransform);
-  }
-  return transform;
 };
 
 const interleaveAttributes = (

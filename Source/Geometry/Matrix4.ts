@@ -1,7 +1,7 @@
 import { Point3 } from "./Point3";
+import { Transform } from "./Transform";
 import { Vector3 } from "./Vector3";
 import { Vector4 } from "./Vector4";
-import { Transform } from "./Transform";
 
 export class Matrix4 {
   rows: Vector4[];
@@ -35,40 +35,40 @@ export class Matrix4 {
   static fromTransform(transform: Transform): Matrix4 {
     const { orientation, position, scale } = transform;
 
-    const w = orientation.a;
-    const x = orientation.b.yz;
-    const y = -orientation.b.xz;
-    const z = orientation.b.xy;
+    const { a, b } = orientation;
+    const { xy, xz, yz } = b;
 
-    const xw = x * w;
-    const xx = x * x;
-    const xy = x * y;
-    const xz = x * z;
+    const a2 = a * a;
 
-    const yw = y * w;
-    const yy = y * y;
-    const yz = y * z;
+    const xy2 = xy * xy;
+    const xz2 = xz * xz;
+    const yz2 = yz * yz;
 
-    const zw = z * w;
-    const zz = z * z;
+    const aXy = a * xy;
+    const aXz = a * xz;
+    const aYz = a * yz;
+
+    const xzYz = xz * yz;
+    const xyYz = xy * yz;
+    const xyXz = xy * xz;
 
     return new Matrix4([
       new Vector4([
-        (1 - 2 * (yy + zz)) * scale.x,
-        2 * (xy + zw) * scale.y,
-        2 * (xz - yw) * scale.z,
+        (a2 - xy2 - xz2 + yz2) * scale.x,
+        2 * (aXy - xzYz) * scale.y,
+        2 * (aXz - xyYz) * scale.z,
         position.x,
       ]),
       new Vector4([
-        2 * (xy - zw) * scale.x,
-        (1 - 2 * (xx + zz)) * scale.y,
-        2 * (yz + xw) * scale.z,
+        -2 * (xzYz + aXy) * scale.x,
+        (a2 - xy2 + xz2 - yz2) * scale.y,
+        2 * (aYz - xyXz) * scale.z,
         position.y,
       ]),
       new Vector4([
-        2 * (xz + yw) * scale.x,
-        2 * (yz - xw) * scale.y,
-        (1 - 2 * (xx + yy)) * scale.z,
+        2 * (xyYz - aXz) * scale.x,
+        -2 * (aYz + xyXz) * scale.y,
+        (a2 + xy2 - xz2 - yz2) * scale.z,
         position.z,
       ]),
       Vector4.unitW(),

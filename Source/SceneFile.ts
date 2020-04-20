@@ -14,8 +14,8 @@ import {
   readUint8,
   skipBytes,
 } from "./BinaryReader";
-import { Bivector3 } from "./Geometry/Bivector3";
 import { Point3 } from "./Geometry/Point3";
+import { Quaternion } from "./Geometry/Quaternion";
 import { Rotor3 } from "./Geometry/Rotor3";
 import { Vector3 } from "./Geometry/Vector3";
 import { TraceError } from "./TraceError";
@@ -191,21 +191,21 @@ export const deserialize = (sourceData: ArrayBuffer): Scene => {
     }
   }
 
-  const accessors = accessorSpecs.map(spec => createAccessor(spec, buffers));
-  const vertexLayouts = vertexLayoutSpecs.map(spec =>
+  const accessors = accessorSpecs.map((spec) => createAccessor(spec, buffers));
+  const vertexLayouts = vertexLayoutSpecs.map((spec) =>
     createVertexLayout(spec, accessors)
   );
-  const meshes = meshSpecs.map(spec =>
+  const meshes = meshSpecs.map((spec) =>
     createMesh(spec, vertexLayouts, accessors)
   );
-  const objects = objectSpecs.map(spec => createObject(spec, meshes));
-  const transformNodes = transformNodeSpecs.map(spec =>
+  const objects = objectSpecs.map((spec) => createObject(spec, meshes));
+  const transformNodes = transformNodeSpecs.map((spec) =>
     createTransformNodeWithoutChildren(spec, objects)
   );
 
   resolveTransformNodeConnections(transformNodeSpecs, transformNodes);
   const rootTransformNodes = transformNodes.filter(
-    transformNode => !transformNode.parent
+    (transformNode) => !transformNode.parent
   );
 
   return {
@@ -334,7 +334,7 @@ const createVertexLayout = (
   spec: VertexLayoutSpec,
   accessors: Accessor[]
 ): VertexLayout => {
-  const vertexAttributes = spec.vertexAttributes.map(vertexAttributeSpec =>
+  const vertexAttributes = spec.vertexAttributes.map((vertexAttributeSpec) =>
     createVertexAttribute(vertexAttributeSpec, accessors)
   );
 
@@ -552,10 +552,7 @@ const readTransformNodeSpec = (reader: BinaryReader): TransformNodeSpec => {
   const childIndices = readUint16Array(reader, childIndexCount);
 
   const transform: Transform = {
-    orientation: new Rotor3(
-      orientationValues[0],
-      new Bivector3(orientationValues.slice(1))
-    ),
+    orientation: Rotor3.fromQuaternion(new Quaternion(orientationValues)),
     position: new Point3(positionValues),
     scale: new Vector3(scaleValues),
   };
@@ -615,7 +612,7 @@ const resolveTransformNodeConnections = (
   for (let i = 0; i < transformNodes.length; i++) {
     const spec = specs[i];
     const transformNode = transformNodes[i];
-    transformNode.children = spec.childIndices.map(childIndex => {
+    transformNode.children = spec.childIndices.map((childIndex) => {
       expectIndexInBounds(
         childIndex,
         transformNodes,
